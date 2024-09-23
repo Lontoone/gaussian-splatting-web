@@ -80,7 +80,7 @@ export class Camera {
         return new Camera(
             500,
             500,
-            mat4.lookAt([0, 0, 0], [0, 0, -1], [0, 1, 0]),
+            mat4.lookAt([0, 0, 0], [0, 0, 1], [0, 0, 1]),
             mat4.perspective(Math.PI / 4, 1, 0.2, 100),
             600,
             600,

@@ -47,7 +47,7 @@ function handlePlyChange(event: any) {
 
 // loads the default ply file (bundled with the source) at startup, useful for dev
 async function loadDefaultPly() {
-    const url = "pc_short.ply";
+    const url = "ply.ply";
     loadingPopup.style.display = 'block'; // show loading popup
     const content = await fetch(url);
     const arrayBuffer = await content.arrayBuffer();
@@ -59,7 +59,7 @@ async function loadDefaultPly() {
 }
 
 // DEV: uncomment this line to load the default ply file at startup
-//loadDefaultPly();
+loadDefaultPly();
 
 // add event listeners
 plyFileInput!.addEventListener('change', handlePlyChange);

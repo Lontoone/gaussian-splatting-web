@@ -198,13 +198,22 @@ export class Renderer {
         });
 
         this.depthSorter = new DepthSorter(this.context, gaussians);
-
+        /*
         this.drawIndexBuffer = this.context.device.createBuffer({
            size: 6 * 4 * gaussians.numGaussians,
            usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
            mappedAtCreation: false,
            label: "renderer.drawIndexBuffer",
         });
+        */
+        const indices = new Uint32Array([0, 1, 2, 1, 3, 2,]);
+		this.drawIndexBuffer = this.context.device.createBuffer({
+			size: indices.byteLength,
+			usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
+			mappedAtCreation: true,
+		});
+		new Uint32Array(this.drawIndexBuffer.getMappedRange()).set(indices);
+		this.drawIndexBuffer.unmap();
 
         // start the animation loop
         requestAnimationFrame(() => this.animate(true));
@@ -230,6 +239,7 @@ export class Renderer {
         const indexBufferSrc = this.depthSorter.sort(this.depthSortMatrix);
 
         // copy the draw order to the draw index buffer
+        /*
         commandEncoder.copyBufferToBuffer(
             indexBufferSrc,
             0,
@@ -237,6 +247,7 @@ export class Renderer {
             0,
             6 * 4 * this.depthSorter.nUnpadded,
         );
+        */
 
         const textureView = this.contextGpu.getCurrentTexture().createView();
         const renderPassDescriptor: GPURenderPassDescriptor = {
@@ -254,8 +265,9 @@ export class Renderer {
         passEncoder.setBindGroup(0, this.uniformsBindGroup);
         passEncoder.setBindGroup(1, this.pointDataBindGroup);
 
-        passEncoder.setIndexBuffer(this.drawIndexBuffer, "uint32" as GPUIndexFormat)
-        passEncoder.drawIndexed(this.numGaussians * 6, 1, 0, 0, 0);
+        passEncoder.setIndexBuffer(this.drawIndexBuffer, "uint32" as GPUIndexFormat)        
+        //passEncoder.drawIndexed(this.numGaussians * 6, 1, 0, 0, 0);
+        passEncoder.drawIndexed( 6, this.numGaussians);
         passEncoder.end();
 
         this.context.device.queue.submit([commandEncoder.finish()]);

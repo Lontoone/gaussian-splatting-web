@@ -273,32 +273,53 @@ const quadVertices = array<vec2<f32>, 6>(
 );
 
 @vertex
-fn vs_points(@builtin(vertex_index) vertex_index: u32) -> PointOutput {
+fn vs_points(
+    //@builtin(vertex_index) vertex_index: u32
+    @builtin(vertex_index) vtxID: u32,
+    @builtin(instance_index) instID: u32
+    ) -> PointOutput {
+
     var output: PointOutput;
-    let pointIndex = vertex_index / 6u;
-    let quadIndex = vertex_index % 6u;
-    let quadOffset = quadVertices[quadIndex];
-    let point = points[pointIndex];
+  
+    let point = points[instID];
+    let idx = vtxID;
+	var quadPos = vec2<f32>(
+			f32(idx&1), 
+			f32((idx>>1)&1)
+			  ) * 2.0 -1 ;
+	quadPos *=2;
 
     let cov2d = compute_cov2d(point.position, point.log_scale, point.rot);
-    let det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
-    let det_inv = 1.0 / det;
-    let conic = vec3<f32>(cov2d.z * det_inv, -cov2d.y * det_inv, cov2d.x * det_inv);
-    let mid = 0.5 * (cov2d.x + cov2d.z);
-    let lambda_1 = mid + sqrt(max(0.1, mid * mid - det));
-    let lambda_2 = mid - sqrt(max(0.1, mid * mid - det));
-    let radius_px = ceil(3. * sqrt(max(lambda_1, lambda_2)));
-    let radius_ndc = vec2<f32>(
-    radius_px / (canvas_height),
-    radius_px / (canvas_width),
-    );
-    output.conic_and_opacity = vec4<f32>(conic, sigmoid(point.opacity_logit));
+    
+    var projPosition = uniforms.projMatrix  * vec4<f32>(point.position, 1.0);
+    //var projPosition = uniforms.projMatrix  * uniforms.viewMatrix * vec4<f32>(point.position, 1.0);
 
-    var projPosition = uniforms.projMatrix * vec4<f32>(point.position, 1.0);
-    projPosition = projPosition / projPosition.w;
-    output.position = vec4<f32>(projPosition.xy + 2 * radius_ndc * quadOffset, projPosition.zw);
+    if(projPosition.w <=0){
+        //behind camera
+        output.uv = vec2f(-99,-99);
+        return output;
+    }
+    var mid =  0.5 * (cov2d.x + cov2d.z);
+	var radius = length(vec2<f32>((cov2d.x - cov2d.z) /2.0  , cov2d.y));
+	var lambda1 = mid + radius;
+	var lambda2 = max(mid - radius , 0.1);
+	var diagVec : vec2<f32> = normalize(vec2<f32>(cov2d.y , lambda1 - lambda2));
+	diagVec.y = -diagVec.y;
+		
+	let maxSize :f32 = 4096.0;
+	let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;
+	let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
+
+    let _ScreenParams : vec2<f32> = vec2<f32>(700 , 700);
+    
+    output.uv  = quadPos;
+    output.position  = projPosition;
+    let deltaScreenPos :vec2<f32> = (quadPos.x * v1 + quadPos.y * v2) * 2 / _ScreenParams.xy;
+
+	output.position  .x += deltaScreenPos.x * projPosition.w;
+	output.position  .y += deltaScreenPos.y * projPosition.w;
+
     output.color = compute_color_from_sh(point.position, point.sh);
-    output.uv = radius_px * quadOffset;
 
     return output;
 }
@@ -307,6 +328,7 @@ fn vs_points(@builtin(vertex_index) vertex_index: u32) -> PointOutput {
 fn fs_main(input: PointOutput) -> @location(0) vec4<f32> {
     // we want the distance from the gaussian to the fragment while uv
     // is the reverse
+    /*
     let d = -input.uv;
     let conic = input.conic_and_opacity.xyz;
     let power = -0.5 * (conic.x * d.x * d.x + conic.z * d.y * d.y) + conic.y * d.x * d.y;
@@ -317,8 +339,19 @@ fn fs_main(input: PointOutput) -> @location(0) vec4<f32> {
     }
 
     let alpha = min(0.99, opacity * exp(power));
-
-    return vec4<f32>(input.color * alpha, alpha);
+    */
+    
+    let uv = abs(input.uv );
+    let power :f32 = -dot(uv, uv);
+    var alpha :f32 = exp(power);
+   
+    if(input.uv.x <=-99 ||alpha <= 1.0/255.0){
+        discard;
+    }
+    
+    
+    //return vec4<f32>(input.color * alpha, alpha);
+    return vec4<f32>(alpha,0,0, alpha);
 }
 `;
 
