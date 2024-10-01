@@ -204,7 +204,8 @@ export class DepthSorter {
 
         // buffer for the resulting index buffer, per vertex, 6 * #nElements
         this.indexBuffer = this.context.device.createBuffer({
-            size: this.nUnpadded * 6 * 4,
+            //size: this.nUnpadded * 6 * 4,
+            size: this.nUnpadded * 6 ,
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             label: "depthSorter.indexBuffer"
         });

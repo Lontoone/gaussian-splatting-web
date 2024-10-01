@@ -27,6 +27,7 @@
     "style-loader": "^3.3.3",
     "ts-loader": "^9.4.4",
     "typescript": "^5.1.6",
+    "webgpu-radix-sort": "^1.0.7",
     "webpack": "^5.88.1",
     "webpack-cli": "^5.1.4",
     "webpack-dev-server": "^4.15.1",
@@ -34,6 +35,7 @@
   },
   "dependencies": {
     "@webgpu/types": "^0.1.34",
+    "gaussian-splatting-web": "file:",
     "wgpu-matrix": "^2.4.2"
   }
 }

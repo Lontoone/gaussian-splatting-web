@@ -10,5 +10,6 @@
     "strictNullChecks": true,
 
   },
-  "files": ["src/index.ts"]
+  "files": ["src/index.ts"],
+  "include": ["webgpu-radix-sort.d.ts","**/*.ts"],
 }

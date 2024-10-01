@@ -74,13 +74,14 @@ export class Camera {
         this.focalX = focalX;
         this.focalY = focalY;
         this.scaleModifier = scaleModifier;
+
     }
 
     static default(): Camera {
         return new Camera(
             500,
             500,
-            mat4.lookAt([0, 0, 0], [0, 0, 1], [0, 0, 1]),
+            mat4.lookAt([0, 0, 20], [0, 0, 0], [0, 1, 0]),
             mat4.perspective(Math.PI / 4, 1, 0.2, 100),
             600,
             600,
@@ -264,14 +265,14 @@ function cameraFromJSON(rawCamera: CameraRaw, canvasW: number, canvasH: number):
     const fovY = focal2fov(rawCamera.fy, rawCamera.height);
     const projectionMatrix = getProjectionMatrix(0.2, 100, fovX, fovY);
 
+
     const R = mat3.create(...rawCamera.rotation.flat());
     const T = rawCamera.position;
 
-    const viewMatrix = worldToCamFromRT(R, T);
-
+    const viewMatrix = worldToCamFromRT(R, T);    
     return new Camera(
-        canvasH,
-        canvasW,
+        rawCamera.height,//canvasH,
+        rawCamera.width,//canvasW,
         viewMatrix,
         projectionMatrix,
         rawCamera.fx,

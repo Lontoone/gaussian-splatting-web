@@ -131,7 +131,7 @@ const shDeg1Code = `
 `;
 
 
-export function getShaderCode(canvas: HTMLCanvasElement, shDegree: number, nShCoeffs: number) {
+export function getShaderCode(canvas: HTMLCanvasElement, shDegree: number, nShCoeffs: number , screenPar_w :number,screenPar_h :number ) {
     const shComputeCode = {
         1: shDeg1Code,
         2: shDeg2Code,
@@ -262,6 +262,7 @@ fn compute_cov2d(position: vec3<f32>, log_scale: vec3<f32>, rot: vec4<f32>) -> v
 
 @binding(0) @group(0) var<uniform> uniforms: Uniforms;
 @binding(1) @group(1) var<storage, read> points: array<PointInput>;
+@binding(2) @group(1) var<storage, read> sorted_idx: array<u32>;
 
 const quadVertices = array<vec2<f32>, 6>(
     vec2<f32>(-1.0, -1.0),
@@ -280,8 +281,8 @@ fn vs_points(
     ) -> PointOutput {
 
     var output: PointOutput;
-  
-    let point = points[instID];
+    let p_idx = sorted_idx[instID];
+    let point = points[p_idx];
     let idx = vtxID;
 	var quadPos = vec2<f32>(
 			f32(idx&1), 
@@ -290,10 +291,12 @@ fn vs_points(
 	quadPos *=2;
 
     let cov2d = compute_cov2d(point.position, point.log_scale, point.rot);
-    
-    var projPosition = uniforms.projMatrix  * vec4<f32>(point.position, 1.0);
-    //var projPosition = uniforms.projMatrix  * uniforms.viewMatrix * vec4<f32>(point.position, 1.0);
+    let det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
+    let det_inv = 1.0 / det;
+    let conic = vec3<f32>(cov2d.z * det_inv, -cov2d.y * det_inv, cov2d.x * det_inv);
+    output.conic_and_opacity = vec4<f32>(conic, sigmoid(point.opacity_logit));
 
+    var projPosition = uniforms.projMatrix * vec4<f32>(point.position, 1.0);   
     if(projPosition.w <=0){
         //behind camera
         output.uv = vec2f(-99,-99);
@@ -310,7 +313,7 @@ fn vs_points(
 	let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;
 	let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
 
-    let _ScreenParams : vec2<f32> = vec2<f32>(700 , 700);
+    let _ScreenParams : vec2<f32> = vec2<f32>(${screenPar_w} , ${screenPar_h});
     
     output.uv  = quadPos;
     output.position  = projPosition;
@@ -340,20 +343,97 @@ fn fs_main(input: PointOutput) -> @location(0) vec4<f32> {
 
     let alpha = min(0.99, opacity * exp(power));
     */
-    
-    let uv = abs(input.uv );
+   
+    var opacity = input.conic_and_opacity.w;   
+    //opacity = saturate(alpha * opacity );
+    let uv = input.uv ;
     let power :f32 = -dot(uv, uv);
     var alpha :f32 = exp(power);
-   
+    if(opacity>=0){
+        alpha = saturate(alpha * opacity );
+    }
     if(input.uv.x <=-99 ||alpha <= 1.0/255.0){
         discard;
     }
     
     
     //return vec4<f32>(input.color * alpha, alpha);
-    return vec4<f32>(alpha,0,0, alpha);
+    return vec4<f32>(alpha,alpha,alpha, 1);
+    //return vec4<f32>(0,0,0, 1);
 }
 `;
 
     return shaderCode;
+}
+
+
+
+
+//======================
+//      Init Sort buffer
+//======================
+
+export function getInitSortBufferCode(count:number , nShCoeffs : number) {
+    const WORKGROUP_SIZE = 8;
+    return `
+        
+        const n_sh_coeffs = ${nShCoeffs};
+        struct PointInput {
+            @location(0) position: vec3<f32>,
+            @location(1) log_scale: vec3<f32>,
+            @location(2) rot: vec4<f32>,
+            @location(3) opacity_logit: f32,
+            sh: array<vec3<f32>, n_sh_coeffs>,
+        };
+
+        struct Uniforms {
+            viewMatrix: mat4x4<f32>,
+            projMatrix: mat4x4<f32>,
+            camera_position: vec3<f32>,
+            tan_fovx: f32,
+            tan_fovy: f32,
+            focal_x: f32,
+            focal_y: f32,
+            scale_modifier: f32,
+        };
+
+        @group(0) @binding(0) var<storage,read_write> 	gaussian_keys_unsorted		: array<u32>;
+		@group(0) @binding(1) var<storage,read_write> 	gaussian_values_unsorted	: array<u32>; 
+		@group(0) @binding(2) var<uniform> 				uniforms: Uniforms;
+		@group(0) @binding(3) var<storage,read_write> 	splatPos: array<PointInput>; 		
+		
+		fn float_to_sortable_uint(f: f32) -> u32 {
+			let fu: u32 = bitcast<u32>(f);
+			let mask: u32 = bitcast<u32>(-(bitcast<i32>(fu) >> 31)) | 0x80000000u;
+			return fu ^ mask;
+		}
+
+		@compute
+		@workgroup_size(  ${WORKGROUP_SIZE}, 1,1 )
+		fn main(			
+			@builtin(workgroup_id) workgroup_id : vec3<u32>,
+			@builtin(local_invocation_id) local_invocation_id : vec3<u32>,
+			@builtin(global_invocation_id) global_invocation_id : vec3<u32>,
+			@builtin(local_invocation_index) local_invocation_index: u32,
+			@builtin(num_workgroups) num_workgroups: vec3<u32>) {
+
+			let workgroup_index =  
+				workgroup_id.x +
+				workgroup_id.y * num_workgroups.x +
+				workgroup_id.z * num_workgroups.x * num_workgroups.y;
+			let idx =
+				workgroup_index * ${WORKGROUP_SIZE} +
+				local_invocation_index;
+			
+			if(idx >= ${count}){
+				return;
+			}			
+
+			gaussian_keys_unsorted[idx] = idx;
+			let pos : vec3<f32> = (uniforms.viewMatrix * vec4<f32> (splatPos[idx].position.xyz , 1.0)).xyz;
+			gaussian_values_unsorted[idx] = float_to_sortable_uint(pos.z);
+			
+			
+		}
+    `
 }

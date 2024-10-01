@@ -11,10 +11,12 @@
 import { PackedGaussians } from './ply';
 import { f32, Struct, vec3, mat4x4 } from './packing';
 import { InteractiveCamera } from './camera';
-import { getShaderCode } from './shaders';
+import { getShaderCode , getInitSortBufferCode } from './shaders';
 import { Mat4, Vec3 } from 'wgpu-matrix';
 import { GpuContext } from './gpu_context';
 import { DepthSorter } from './depth_sorter';
+import { RadixSortKernel } from 'webgpu-radix-sort';
+
 
 const uniformLayout = new Struct([
     ['viewMatrix', new mat4x4(f32)],
@@ -47,12 +49,18 @@ export class Renderer {
     uniformBuffer: GPUBuffer;
     pointDataBuffer: GPUBuffer;
     drawIndexBuffer: GPUBuffer;
+    // Sort
+    sort_key_buffer : GPUBuffer;
+    sort_value_buffer : GPUBuffer;
+    
+    radixSortKernel ;
+    //depthSorter: DepthSorter;
 
-    depthSorter: DepthSorter;
-
+    initSortBindGroup: GPUBindGroup;
     uniformsBindGroup: GPUBindGroup;
     pointDataBindGroup: GPUBindGroup;
 
+    init_sort_pipeline:GPUComputePipeline;
     drawPipeline: GPURenderPipeline;
 
     depthSortMatrix: number[][];
@@ -120,7 +128,9 @@ export class Renderer {
             format: presentationFormat,
             alphaMode: 'premultiplied' as GPUCanvasAlphaMode,
         });
-
+        //===========================================
+        //             Point Buffer
+        //===========================================
         this.pointDataBuffer = this.context.device.createBuffer({
             size: gaussians.gaussianArrayLayout.size,
             usage: GPUBufferUsage.STORAGE,
@@ -137,11 +147,56 @@ export class Renderer {
             label: "renderer.uniformBuffer",
         });
 
-        const shaderCode = getShaderCode(canvas, gaussians.sphericalHarmonicsDegree, gaussians.nShCoeffs);
+        const shaderCode = getShaderCode(
+            canvas, 
+            gaussians.sphericalHarmonicsDegree,
+            gaussians.nShCoeffs,            
+            this.interactiveCamera.getCamera().width,
+            this.interactiveCamera.getCamera().height *2,
+        );
+        console.log(this.interactiveCamera.getCamera());
         const shaderModule = this.context.device.createShaderModule({ code: shaderCode });
 
+        //===========================================
+        //              Pipeline
+        //===========================================
+        const draw_uniform_bindinglayout = this.context.device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                    buffer: {
+                        type: 'uniform',
+                    },
+                },              
+            ],
+        });       
+        const draw_data_bindinglayout = this.context.device.createBindGroupLayout({
+            label:"draw_data_bindinglayout",
+            entries: [
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                    buffer: {
+                        type: 'read-only-storage',
+                    },
+                },              
+                {
+                    binding: 2,                    
+                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+                    buffer: {
+                        type: 'read-only-storage',
+                    },
+                },              
+            ],
+        });      
+        const draw_pipeline_layout= this.context.device.createPipelineLayout({
+            label: "draw_pipeline_layout ",
+            bindGroupLayouts : [draw_uniform_bindinglayout,draw_data_bindinglayout],
+        });
         this.drawPipeline = this.context.device.createRenderPipeline({
-            layout: "auto",
+            //layout: "auto",            
+            layout : draw_pipeline_layout,
             vertex: {
                 module: shaderModule,
                 entryPoint: "vs_points",
@@ -176,9 +231,25 @@ export class Renderer {
                 cullMode: undefined,
             },
         });
+        //===========================================
+        //              Binding group
+        //===========================================
+        // key_buffer , value buffer
+        this.sort_key_buffer = this.context.device.createBuffer({
+			size: this.numGaussians * 4,
+			usage:  GPUBufferUsage.STORAGE || GPUBufferUsage.COPY_DST,
+			mappedAtCreation: false,
+		});
+        this.sort_value_buffer = this.context.device.createBuffer({
+			size: this.numGaussians * 4,
+			usage:  GPUBufferUsage.STORAGE || GPUBufferUsage.COPY_DST,
+			mappedAtCreation: false,
+		});
 
+        // Drawing pass
         this.uniformsBindGroup = this.context.device.createBindGroup({
-            layout: this.drawPipeline.getBindGroupLayout(0),
+            //layout: this.drawPipeline.getBindGroupLayout(0),
+            layout: draw_uniform_bindinglayout,
             entries: [{
                 binding: 0,
                 resource: {
@@ -188,17 +259,23 @@ export class Renderer {
         });
 
         this.pointDataBindGroup = this.context.device.createBindGroup({
-            layout: this.drawPipeline.getBindGroupLayout(1),
+            //layout: this.drawPipeline.getBindGroupLayout(1),
+            layout : draw_data_bindinglayout,
             entries: [{
                 binding: 1,
                 resource: {
                     buffer: this.pointDataBuffer,
                 },
+            },{
+                binding: 2,
+                resource: {
+                    buffer: this.sort_key_buffer,
+                },
             }],
         });
 
-        this.depthSorter = new DepthSorter(this.context, gaussians);
         /*
+        this.depthSorter = new DepthSorter(this.context, gaussians);
         this.drawIndexBuffer = this.context.device.createBuffer({
            size: 6 * 4 * gaussians.numGaussians,
            usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
@@ -206,6 +283,100 @@ export class Renderer {
            label: "renderer.drawIndexBuffer",
         });
         */
+        //===========================================
+        //             Radix Sorter
+        //===========================================
+        
+        this.radixSortKernel = new RadixSortKernel({
+            device:  this.context.device,                   // GPUDevice to use
+            keys: this.sort_value_buffer,                 // GPUBuffer containing the keys to sort
+            values: this.sort_key_buffer,             // (optional) GPUBuffer containing the associated values
+            count: this.numGaussians ,               // Number of elements to sort
+            check_order: false,               // Whether to check if the input is already sorted to exit early
+            bit_count: 32,                    // Number of bits per element. Must be a multiple of 4 (default: 32)
+            workgroup_size: { x: 16, y: 16 }, // Workgroup size in x and y dimensions. (x * y) must be a power of two
+        })
+        console.log(this.radixSortKernel);
+        // Init rasix sort pipeline
+        const sort_shaderModule =  this.context.device.createShaderModule({
+            code: getInitSortBufferCode(this.numGaussians , gaussians.nShCoeffs),
+        });
+
+
+        const init_sort_bindinglayout = this.context.device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'storage',
+                    },
+                },
+                {
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'storage',
+                    },
+                },
+                {
+                    binding: 2,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'uniform',
+                    },
+                },
+                {
+                    binding: 3,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'storage',
+                    },
+                },
+                
+            ],
+        });        
+        this.initSortBindGroup = this.context.device.createBindGroup({
+            layout: init_sort_bindinglayout,
+            label: "initSortBindGroup",
+            entries: [{
+                binding: 0,
+                resource: {
+                    buffer: this.sort_key_buffer,
+                },
+            },{
+                binding: 1,
+                resource: {
+                    buffer: this.sort_value_buffer,
+                },
+            },{
+                binding: 2,
+                resource: {
+                    buffer: this.uniformBuffer,
+                },
+            },{
+                binding: 3,
+                resource: {
+                    buffer: this.pointDataBuffer,
+                },
+            }],
+        });
+
+        const init_sort_pipeline_layout= this.context.device.createPipelineLayout({
+            bindGroupLayouts: [init_sort_bindinglayout],
+        });
+        this.init_sort_pipeline  = this.context.device.createComputePipeline({
+            layout: init_sort_pipeline_layout, 
+            compute: {
+                module: sort_shaderModule,
+                entryPoint: "main",
+            }
+        });
+        
+
+       
+
+
         const indices = new Uint32Array([0, 1, 2, 1, 3, 2,]);
 		this.drawIndexBuffer = this.context.device.createBuffer({
 			size: indices.byteLength,
@@ -227,16 +398,29 @@ export class Renderer {
         this.uniformBuffer.destroy();
         this.pointDataBuffer.destroy();
         this.drawIndexBuffer.destroy();
-        this.depthSorter.destroy();
+        //this.depthSorter.destroy();
         this.context.destroy();
         this.destroyCallback();
     }
 
     draw(nextFrameCallback: FrameRequestCallback): void {
+
+        const init_encoder = this.context.device.createCommandEncoder();
+        const cs_initSortBuffer_pass = init_encoder.beginComputePass();
+        cs_initSortBuffer_pass.setPipeline(this.init_sort_pipeline);
+        cs_initSortBuffer_pass.setBindGroup(0 , this.initSortBindGroup);
+        cs_initSortBuffer_pass.dispatchWorkgroups(this.numGaussians/8 , 1,1);
+        cs_initSortBuffer_pass.end();
+        this.context.device.queue.submit([init_encoder.finish()])
+
         const commandEncoder = this.context.device.createCommandEncoder();
+        const sort_pass = commandEncoder.beginComputePass()
+        this.radixSortKernel.dispatch(sort_pass) // Sort keysBuffer and valuesBuffer in-place on the GPU
+        sort_pass.end()
+        //this.context.device.queue.submit([commandEncoder.finish()])
 
         // sort the draw order
-        const indexBufferSrc = this.depthSorter.sort(this.depthSortMatrix);
+        //const indexBufferSrc = this.depthSorter.sort(this.depthSortMatrix);
 
         // copy the draw order to the draw index buffer
         /*
