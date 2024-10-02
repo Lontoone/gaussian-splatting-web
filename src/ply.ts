@@ -266,10 +266,11 @@ export class PackedGaussians {
             var q : Vec4= [rawVertex.rot_0 , rawVertex.rot_1 , rawVertex.rot_2, rawVertex.rot_3];
             var qq = this.NormalizeSwizzleRotation(q);
             qq = this.PackSmallest3Rotation(qq);
-            rawVertex.rot_0 = qq[0]
-            rawVertex.rot_1 = qq[1]
-            rawVertex.rot_2 = qq[2]
-            rawVertex.rot_3 = qq[3]
+            // Note : When rotation = 0 , qq will be Nan
+            rawVertex.rot_0 = qq[0]||0
+            rawVertex.rot_1 = qq[1]||0
+            rawVertex.rot_2 = qq[2]||0
+            rawVertex.rot_3 = qq[3]||0
 
             // Pre-process scale:            
             /*

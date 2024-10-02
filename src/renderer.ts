@@ -459,8 +459,9 @@ export class Renderer {
 
         */
 
-       this.simple_render.draw(this.numGaussians);
        /*       
+       this.simple_render.draw(this.numGaussians);
+       */
         const RenderEncoder = this.context.device.createCommandEncoder();  
         
         const textureView = this.contextGpu.getCurrentTexture().createView();
@@ -486,7 +487,7 @@ export class Renderer {
         passEncoder.end();
         
         this.context.device.queue.submit([RenderEncoder.finish()]);
-        */
+        
         
         // fps counter
         const now = performance.now();

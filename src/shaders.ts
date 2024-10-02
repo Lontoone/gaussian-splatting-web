@@ -257,8 +257,8 @@ fn compute_cov3d(log_scale: vec3<f32>, rot: vec4<f32>) -> array<f32, 6> {
 
 		let W = transpose(uniforms.viewMatrix);
 
-		let T = W *  J;   // Origin , but transpose is better?
-		//let T = W *  transpose(J);
+		//let T = W *  J;   // Origin , but transpose is better?
+		let T = W *  transpose(J);
 
 		let Vrk = mat4x4(
 			cov3d[0], cov3d[1], cov3d[2], 0.,

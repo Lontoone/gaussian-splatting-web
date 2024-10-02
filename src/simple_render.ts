@@ -225,7 +225,7 @@ function get_simple_shader(){
 	fn fs_main(input: PointOutput) ->@location(0) vec4f  {
 			//return vec4<f32>(1.0, 0.0, 1.0, 1.0); 			
 			//return vec4f(abs(input.uv) , 0 ,1);
-			return vec4f(input.uv , 0 ,1);
+			//return vec4f(input.uv , 0 ,1);
 
 			var opacity = input.conic_and_opacity.w;   
 			var color : vec4<f32> = vec4<f32> (input.color ,opacity);
@@ -239,8 +239,8 @@ function get_simple_shader(){
 			}
 				
 			//return vec4<f32>(color.rgb, alpha);
-			return vec4f(input.uv , 1 ,1);
-			//return vec4<f32>(0,0,0, alpha);
+			//return vec4f(input.uv , 1 ,1);
+			return vec4<f32>(0,0,0, alpha);
 			//return vec4<f32>(alpha,alpha,alpha, 1);
 		}
 		
@@ -293,7 +293,7 @@ function get_simple_shader(){
 		let deltaScreenPos :vec2<f32> = vec2<f32>(quadPos.x * v1 + quadPos.y * v2) * 2 /_ScreenParams.xy;
 		
 
-		output.uv = abs(vec2f(mid , mid)); //TODO: cov2d is 0
+		//output.uv = (v1);
         
         output.position  .x += deltaScreenPos.x * clipPos.w;
         output.position  .y += deltaScreenPos.y * clipPos.w;
