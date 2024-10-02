@@ -1,5 +1,6 @@
+
 import { PackingType, StaticArray, Struct, vec3, vec4, f32 } from "./packing";
-import { Vec3 } from "wgpu-matrix";
+import { Vec3 , Vec4  } from "wgpu-matrix";
 
 export function loadFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
     /* loads a file as an ArrayBuffer (i.e. a binary blob) */
@@ -159,11 +160,56 @@ export class PackedGaussians {
         };
         return arrangedVertex;
     }
+    private normalizeV4(xyzw : Vec4):Vec4{
+        let len = Math.sqrt(xyzw[0] *xyzw[0] + xyzw[1]*xyzw[1] + xyzw[2]*xyzw[2]+xyzw[3]*xyzw[3] );
+        return [xyzw[0] / len , xyzw[1] / len,xyzw[2] / len,xyzw[3] / len];
+    }
+    private NormalizeSwizzleRotation(wxyz:Vec4) : Vec4
+    {
+        //return Math.normalize(wxyz).yzwx;
+        var a :Vec4  = this.normalizeV4(wxyz);
+        var result :Vec4 = [a[1], a[2], a[3], a[0]];
+        return result;
+    }
+
+    private PackSmallest3Rotation(q : Vec4):Vec4{
+        var absQ = [Math.abs(q[0])  , Math.abs(q[1]),Math.abs(q[2]) ,Math.abs(q[3])  ];
+        var index = 0 ;
+        var maxV = absQ[0];
+        if(absQ[1] > maxV){
+            index = 1;
+            maxV = absQ[1];
+        }
+        if(absQ[2] > maxV){
+            index = 2;
+            maxV = absQ[2];
+        }
+        if(absQ[3] > maxV){
+            index = 3;
+            maxV = absQ[3];
+        }
+
+        if(index==0){q= [q[1] , q[2], q[3] , q[0]]};
+        if(index==1){q= [q[0] , q[2], q[3] , q[1]]};
+        if(index==2){q= [q[0] , q[1], q[3] , q[2]]};
+        
+        let s = (q[4]>=0? 1: -1);
+        var q3d :Vec3 = [q[0] *s, q[1] *s, q[2]*s] ;
+        var three  = q3d;
+        three[0] = three[0]*Math.SQRT2 *0.5+0.5;
+        three[1] = three[1]*Math.SQRT2 *0.5+0.5;
+        three[2] = three[2]*Math.SQRT2 *0.5+0.5;
+
+        return [three[0] , three[1] , three[2] , index/3.0];
+    }
+    private LinearScale(s:number):number{
+        return Math.abs(Math.exp(s));
+    }
 
     constructor(arrayBuffer: ArrayBuffer) {
         // decode the header
         const [vertexCount, propertyTypes, vertexData] = PackedGaussians.decodeHeader(arrayBuffer);
-        console.log(vertexData);
+
         this.numGaussians = vertexCount;
 
         // figure out the SH degree from the number of coefficients
@@ -215,6 +261,28 @@ export class PackedGaussians {
         for (let i = 0; i < vertexCount; i++) {
             const [newReadOffset, rawVertex] = this.readRawVertex(readOffset, vertexData, propertyTypes);
             readOffset = newReadOffset;
+
+            // Pre-process rotation:
+            var q : Vec4= [rawVertex.rot_0 , rawVertex.rot_1 , rawVertex.rot_2, rawVertex.rot_3];
+            var qq = this.NormalizeSwizzleRotation(q);
+            qq = this.PackSmallest3Rotation(qq);
+            rawVertex.rot_0 = qq[0]
+            rawVertex.rot_1 = qq[1]
+            rawVertex.rot_2 = qq[2]
+            rawVertex.rot_3 = qq[3]
+
+            // Pre-process scale:            
+            /*
+            */
+           rawVertex.scale_0 = this.LinearScale(rawVertex.scale_0);
+           rawVertex.scale_1 = this.LinearScale(rawVertex.scale_1);
+           rawVertex.scale_2 = this.LinearScale(rawVertex.scale_2);
+           //rawVertex.scale_3 = this.LinearScale(rawVertex.scale_3);
+           
+           //console.log(rawVertex);
+
+
+            // Original code:
             gaussianWriteOffset = this.gaussianLayout.pack(
                 gaussianWriteOffset,
                 this.arrangeVertex(rawVertex, shFeatureOrder),
@@ -226,6 +294,8 @@ export class PackedGaussians {
                 [rawVertex.x, rawVertex.y, rawVertex.z],
                 positionsWriteView,
             );
+            //console.log(rawVertex);
+            //console.log("vertex x " + rawVertex.x + " y " +  rawVertex.y + " z " + rawVertex.z);
         }
     }
 }

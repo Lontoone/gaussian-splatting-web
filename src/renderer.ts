@@ -12,10 +12,11 @@ import { PackedGaussians } from './ply';
 import { f32, Struct, vec3, mat4x4 } from './packing';
 import { InteractiveCamera } from './camera';
 import { getShaderCode , getInitSortBufferCode } from './shaders';
-import { Mat4, Vec3 } from 'wgpu-matrix';
+import { mat4, Mat4, Vec3 } from 'wgpu-matrix';
 import { GpuContext } from './gpu_context';
 import { DepthSorter } from './depth_sorter';
 import { RadixSortKernel } from 'webgpu-radix-sort';
+import { SimpleRender } from './simple_render';
 
 
 const uniformLayout = new Struct([
@@ -68,6 +69,8 @@ export class Renderer {
     // fps counter
     fpsCounter: HTMLLabelElement;
     lastDraw: number;
+
+    simple_render : SimpleRender ; //dummy renderer
 
     destroyCallback: (() => void) | null = null;
 
@@ -133,7 +136,7 @@ export class Renderer {
         //===========================================
         this.pointDataBuffer = this.context.device.createBuffer({
             size: gaussians.gaussianArrayLayout.size,
-            usage: GPUBufferUsage.STORAGE,
+            usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
             mappedAtCreation: true,
             label: "renderer.pointDataBuffer",
         });
@@ -151,9 +154,10 @@ export class Renderer {
             canvas, 
             gaussians.sphericalHarmonicsDegree,
             gaussians.nShCoeffs,            
-            this.interactiveCamera.getCamera().width,
-            this.interactiveCamera.getCamera().height *2,
+            this.canvas.width,
+            this.canvas.height ,
         );
+
         console.log(this.interactiveCamera.getCamera());
         const shaderModule = this.context.device.createShaderModule({ code: shaderCode });
 
@@ -227,6 +231,8 @@ export class Renderer {
             },
             primitive: {
                 topology: "triangle-list",
+                //topology: "point-list",
+                //topology: "line-list",
                 stripIndexFormat: undefined,
                 cullMode: undefined,
             },
@@ -237,12 +243,12 @@ export class Renderer {
         // key_buffer , value buffer
         this.sort_key_buffer = this.context.device.createBuffer({
 			size: this.numGaussians * 4,
-			usage:  GPUBufferUsage.STORAGE || GPUBufferUsage.COPY_DST,
+			usage:  GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST| GPUBufferUsage.COPY_SRC,
 			mappedAtCreation: false,
 		});
         this.sort_value_buffer = this.context.device.createBuffer({
 			size: this.numGaussians * 4,
-			usage:  GPUBufferUsage.STORAGE || GPUBufferUsage.COPY_DST,
+			usage:  GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST| GPUBufferUsage.COPY_SRC,
 			mappedAtCreation: false,
 		});
 
@@ -292,7 +298,7 @@ export class Renderer {
             keys: this.sort_value_buffer,                 // GPUBuffer containing the keys to sort
             values: this.sort_key_buffer,             // (optional) GPUBuffer containing the associated values
             count: this.numGaussians ,               // Number of elements to sort
-            check_order: false,               // Whether to check if the input is already sorted to exit early
+            check_order: true,               // Whether to check if the input is already sorted to exit early
             bit_count: 32,                    // Number of bits per element. Must be a multiple of 4 (default: 32)
             workgroup_size: { x: 16, y: 16 }, // Workgroup size in x and y dimensions. (x * y) must be a power of two
         })
@@ -374,9 +380,6 @@ export class Renderer {
         });
         
 
-       
-
-
         const indices = new Uint32Array([0, 1, 2, 1, 3, 2,]);
 		this.drawIndexBuffer = this.context.device.createBuffer({
 			size: indices.byteLength,
@@ -386,6 +389,11 @@ export class Renderer {
 		new Uint32Array(this.drawIndexBuffer.getMappedRange()).set(indices);
 		this.drawIndexBuffer.unmap();
 
+
+        this.simple_render= new SimpleRender(context , canvas , 
+            this.pointDataBuffer,
+            this.uniformBuffer,
+            this.sort_key_buffer); //dummy 
         // start the animation loop
         requestAnimationFrame(() => this.animate(true));
     }
@@ -403,36 +411,58 @@ export class Renderer {
         this.destroyCallback();
     }
 
-    draw(nextFrameCallback: FrameRequestCallback): void {
-
+    draw(nextFrameCallback: FrameRequestCallback): void {                
         const init_encoder = this.context.device.createCommandEncoder();
         const cs_initSortBuffer_pass = init_encoder.beginComputePass();
         cs_initSortBuffer_pass.setPipeline(this.init_sort_pipeline);
         cs_initSortBuffer_pass.setBindGroup(0 , this.initSortBindGroup);
-        cs_initSortBuffer_pass.dispatchWorkgroups(this.numGaussians/8 , 1,1);
+        cs_initSortBuffer_pass.dispatchWorkgroups(Math.max(this.numGaussians/8 ,8) , 1,1);
         cs_initSortBuffer_pass.end();
-        this.context.device.queue.submit([init_encoder.finish()])
 
-        const commandEncoder = this.context.device.createCommandEncoder();
+        this.context.device.queue.submit([init_encoder.finish()])
+        
+        const commandEncoder = this.context.device.createCommandEncoder();        
         const sort_pass = commandEncoder.beginComputePass()
         this.radixSortKernel.dispatch(sort_pass) // Sort keysBuffer and valuesBuffer in-place on the GPU
         sort_pass.end()
-        //this.context.device.queue.submit([commandEncoder.finish()])
+        this.context.device.queue.submit([commandEncoder.finish()])
+        
 
-        // sort the draw order
-        //const indexBufferSrc = this.depthSorter.sort(this.depthSortMatrix);
+        //==========
+        //     Test        
+        //==========
+        
 
-        // copy the draw order to the draw index buffer
         /*
-        commandEncoder.copyBufferToBuffer(
-            indexBufferSrc,
-            0,
-            this.drawIndexBuffer,
-            0,
-            6 * 4 * this.depthSorter.nUnpadded,
-        );
+        const _data_size = 4;
+		const _buffer_size = this.numGaussians * _data_size;
+		//const buffer = this.simple_render.vertexBuffer;       
+		const buffer = this.sort_key_buffer;       
+
+		const readBuffer = this.context.device.createBuffer({			
+			size: _buffer_size,
+			usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+			mappedAtCreation: false,
+			label: "read back buffer"
+		});
+		const _cmdPass = this.context.device.createCommandEncoder();
+        
+		_cmdPass.copyBufferToBuffer(buffer, 0, readBuffer, 0, _buffer_size);
+		this.context.device.queue.submit([ _cmdPass.finish()]);
+				
+		readBuffer.mapAsync(GPUMapMode.READ).then(() => {
+			const result = new Uint32Array(readBuffer.getMappedRange());
+			
+			console.log(result);
+			readBuffer.unmap();
+		});
+
         */
 
+       this.simple_render.draw(this.numGaussians);
+       /*       
+        const RenderEncoder = this.context.device.createCommandEncoder();  
+        
         const textureView = this.contextGpu.getCurrentTexture().createView();
         const renderPassDescriptor: GPURenderPassDescriptor = {
             colorAttachments: [{
@@ -440,29 +470,30 @@ export class Renderer {
                 clearValue: { r: 0, g: 0, b: 0, a: 0 },
                 storeOp: "store" as GPUStoreOp,
                 loadOp: "clear" as GPULoadOp,
-            }],
-        };
-
-        const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
+                }],
+                };
+                
+        const passEncoder = RenderEncoder.beginRenderPass(renderPassDescriptor);
         passEncoder.setPipeline(this.drawPipeline);
-
+        
         passEncoder.setBindGroup(0, this.uniformsBindGroup);
         passEncoder.setBindGroup(1, this.pointDataBindGroup);
-
+        
         passEncoder.setIndexBuffer(this.drawIndexBuffer, "uint32" as GPUIndexFormat)        
         //passEncoder.drawIndexed(this.numGaussians * 6, 1, 0, 0, 0);
         passEncoder.drawIndexed( 6, this.numGaussians);
+        
         passEncoder.end();
-
-        this.context.device.queue.submit([commandEncoder.finish()]);
-
+        
+        this.context.device.queue.submit([RenderEncoder.finish()]);
+        */
+        
         // fps counter
         const now = performance.now();
         const fps = 1000 / (now - this.lastDraw);
         this.lastDraw = now;
         this.fpsCounter.innerText = 'FPS: ' + fps.toFixed(2);
         this.fpsCounter.style.display = 'block';
-
         requestAnimationFrame(nextFrameCallback);
     }
 
@@ -483,11 +514,17 @@ export class Renderer {
         const tanHalfFovY = 0.5 * this.canvas.height / camera.focalY;
 
         this.depthSortMatrix = mat4toArrayOfArrays(camera.viewMatrix);
-
+        console.log(camera);
         let uniformsMatrixBuffer = new ArrayBuffer(this.uniformBuffer.size);
+
+        let viewMat = mat4toArrayOfArrays(mat4.transpose(camera.viewMatrix))
+        let projMat = mat4toArrayOfArrays(mat4.transpose(camera.perspective))
+        console.log( viewMat);        
+        console.log( projMat);
         let uniforms = {
             viewMatrix: mat4toArrayOfArrays(camera.viewMatrix),
-            projMatrix: mat4toArrayOfArrays(camera.getProjMatrix()),
+            //projMatrix: mat4toArrayOfArrays(camera.getProjMatrix()),
+            projMatrix: mat4toArrayOfArrays( camera.perspective),
             cameraPosition: Array.from(position),
             tanHalfFovX: tanHalfFovX,
             tanHalfFovY: tanHalfFovY,

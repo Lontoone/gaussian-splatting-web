@@ -31,6 +31,7 @@ function handlePlyChange(event: any) {
             const context = await Renderer.requestContext(gaussians);
             const renderer = new Renderer(canvas, interactiveCamera, gaussians, context, fpsCounter);
             currentRenderer = renderer; // bind to the global scope
+
             loadingPopup.style.display = 'none'; // hide loading popup
         } catch (error) {
             loadingPopup.style.display = 'none'; // hide loading popup
@@ -48,7 +49,7 @@ function handlePlyChange(event: any) {
 // loads the default ply file (bundled with the source) at startup, useful for dev
 async function loadDefaultPly() {
     //const url = "ply.ply";
-    const url = "ps3.ply";
+    const url = "ply3.ply";
     loadingPopup.style.display = 'block'; // show loading popup
     const content = await fetch(url);
     const arrayBuffer = await content.arrayBuffer();
@@ -57,6 +58,7 @@ async function loadDefaultPly() {
     const renderer = new Renderer(canvas, interactiveCamera, gaussians, context, fpsCounter);
     currentRenderer = renderer; // bind to the global scope
     loadingPopup.style.display = 'none'; // hide loading popup
+   
 }
 
 // DEV: uncomment this line to load the default ply file at startup
