@@ -181,123 +181,115 @@ fn sigmoid(x: f32) -> f32 {
         return z / (1. + z);
     }
 }
-fn CalcMatrixFromRotationScale(rot: vec4<f32>, scale: vec3<f32>) -> mat3x3<f32> {
-			let ms = mat3x3<f32>(
-				scale.x, 0.0, 0.0,
-				0.0, scale.y, 0.0,
-				0.0, 0.0, scale.z
-			);
 
-			let x = rot.x;
-			let y = rot.y;
-			let z = rot.z;
-			let w = rot.w;
-
-			let mr = mat3x3<f32>(
-				1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - w * z), 2.0 * (x * z + w * y),
-				2.0 * (x * y + w * z), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - w * x),
-				2.0 * (x * z - w * y), 2.0 * (y * z + w * x), 1.0 - 2.0 * (x * x + y * y)
-			);
-
-			return mr * ms;
-		}
 fn compute_cov3d(log_scale: vec3<f32>, rot: vec4<f32>) -> array<f32, 6> {
 		let modifier = uniforms.scale_modifier;
-		
 		let S = mat3x3<f32>(
-			(log_scale.x) * modifier, 0., 0.,
-			0., (log_scale.y) * modifier, 0.,
-			0., 0., (log_scale.z) * modifier,
+			log_scale.x * modifier, 0., 0.,
+			0., log_scale.y * modifier, 0.,
+			0., 0., log_scale.z * modifier,
 		);
-		
-		let x = rot.x;
-		let y = rot.y;
-		let z = rot.z;
-		let w = rot.w;
+
+		let r = rot.x;
+		let x = rot.y;
+		let y = rot.z;
+		let z = rot.w;
 
 		let R = mat3x3<f32>(
-			1-2*(y*y + z*z),   2*(x*y - w*z),   2*(x*z + w*y),
-          	2*(x*y + w*z), 1-2*(x*x + z*z),   2*(y*z - w*x),
-          	2*(x*z - w*y),   2*(y*z + w*x), 1-2*(x*x + y*y)
+			1. - 2. * (y * y + z * z), 2. * (x * y - r * z), 2. * (x * z + r * y),
+			2. * (x * y + r * z), 1. - 2. * (x * x + z * z), 2. * (y * z - r * x),
+			2. * (x * z - r * y), 2. * (y * z + r * x), 1. - 2. * (x * x + y * y),
 		);
 
-		let M =  R * S;
+		let M = S * R;
+		let Sigma = transpose(M) * M;
 
-		// ------------ CalcCovariance3D ----------------
-		let Sigma = M * transpose(M) ;		
 		return array<f32, 6>(
-			/*
-			*/
 			Sigma[0][0],
 			Sigma[0][1],
 			Sigma[0][2],
 			Sigma[1][1],
-			Sigma[1][2],			
-			Sigma[2][2],			
+			Sigma[1][2],
+			Sigma[2][2],
 		);
 	} 
 
+	fn ndc2pix(v: f32, size: u32) -> f32 {
+		return ((v + 1.0) * f32(size) - 1.0) * 0.5;
+	}
+
 	fn compute_cov2d(position: vec3<f32>, log_scale: vec3<f32>, rot: vec4<f32>) -> vec3<f32> {
-		//let cov3d = compute_cov3d(log_scale, rot);		
-        let splatRotScaleMat : mat3x3<f32> = CalcMatrixFromRotationScale(rot, log_scale);			
-			
-		let sig :  mat3x3<f32> = splatRotScaleMat * transpose(splatRotScaleMat);
-		var cov3d0 : vec3f = vec3f (sig[0][0] , sig[0][1] , sig[0][2]  );
-		var cov3d1 : vec3f = vec3f (sig[1][1] , sig[1][2] , sig[2][2]  );
-			
-		let _VecScreenParams = vec4f(${600},${600},0,0);
+		let cov3d = compute_cov3d(log_scale, rot);
+		let aspect = 1.0;  //TODO!
+		var t = uniforms.viewMatrix * vec4<f32>(position, 1.0);
+		let tanFovX: f32 = 1.0 / uniforms.projMatrix[0][0];
+		let tanFovY: f32 = 1.0 / (uniforms.projMatrix[1][1] * aspect);
+		//    	float tanFovX = rcp(matrixP._m00);
+    	//		float tanFovY = rcp(matrixP._m11 * aspect);
+		//let limx = 1.3 * uniforms.tan_fovx;
+		//let limy = 1.3 * uniforms.tan_fovy;
 
-        // Cov2d:			
-        var viewPos:vec3f = (uniforms.viewMatrix * vec4<f32>(position, 1.0)).xyz;
-        let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  // = 1
+		let screenParams_x = f32(${screenPar_w}); //TODO;
+		let focal = screenParams_x * uniforms.projMatrix[0][0] / 2;
 
-        let tanFovX: f32 = 1.0 / uniforms.projMatrix[0][0];
-        let tanFovY: f32 = 1.0 / (uniforms.projMatrix[1][1] * aspect);
+		let limx = 1.3 * tanFovX;
+		let limy = 1.3 * tanFovY;
 
-        let limx = 1.3 * tanFovX;
-        let limy = 1.3 * tanFovY;
-        let txtz = viewPos.x / viewPos.z;
-        let tytz = viewPos.y / viewPos.z;
+		let txtz = t.x / t.z;
+		let tytz = t.y / t.z;
 
-        viewPos.x = min(limx, max(-limx, txtz)) * viewPos.z;
-        viewPos.y = min(limy, max(-limy, tytz)) * viewPos.z;
+		t.x = min(limx, max(-limx, txtz)) * t.z;
+		t.y = min(limy, max(-limy, tytz)) * t.z;
+		/*
+		let J = mat4x4(
+			uniforms.focal_x / t.z, 0., -(uniforms.focal_x * t.x) / (t.z * t.z), 0.,
+			0., uniforms.focal_y / t.z, -(uniforms.focal_y * t.y) / (t.z * t.z), 0.,
+			0., 0., 0., 0.,
+			0., 0., 0., 0.,
+		);
+		*/
+		let J = mat4x4(
+			focal / t.z, 0., -(focal * t.x) / (t.z * t.z), 0.,
+			0., focal / t.z, -(focal * t.y) / (t.z * t.z), 0.,
+			0., 0., 0., 0.,
+			0., 0., 0., 0.,
+		);
 
-        let focal = _VecScreenParams.x * uniforms.projMatrix[0][0] / 2;
-        let J = mat3x3(
-            focal / viewPos.z, 0., -(focal * viewPos.x) / (viewPos.z * viewPos.z),
-            0., focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
-            0., 0., 0., 
-        );
+		let W = transpose(uniforms.viewMatrix);
 
-        let W = mat3x3<f32>(
-            uniforms.viewMatrix[0].xyz,
-            uniforms.viewMatrix[1].xyz,
-            uniforms.viewMatrix[2].xyz
-        );
-        
-        let T = J * W;
+		//let T = W *  J;   // Origin , but transpose is better?
+		let T = W *  transpose(J);
 
-        let Vrk = mat3x3(
-            cov3d0.x, cov3d0.y, cov3d0.z,
-            cov3d0.y, cov3d1.x, cov3d1.y,
-            cov3d0.z, cov3d1.y, cov3d1.z	
-        );
+		let Vrk = mat4x4(
+			cov3d[0], cov3d[1], cov3d[2], 0.,
+			cov3d[1], cov3d[3], cov3d[4], 0.,
+			cov3d[2], cov3d[4], cov3d[5], 0.,
+			0., 0., 0., 0.,
+		);
 
-        //var cov2d_mat = transpose(T) * transpose(Vrk) * T;
-        var cov2d_mat = T * ((Vrk) * transpose(T));
-        cov2d_mat[0][0] += 0.3;
-        cov2d_mat[1][1] += 0.3;
+		var cov = transpose(T) * transpose(Vrk) * T;
 
-        let cov2d :vec3f  = vec3f(cov2d_mat[0][0] , -cov2d_mat[0][1] , cov2d_mat[1][1]);
+		// Apply low-pass filter: every Gaussian should be at least
+		// one pixel wide/high. Discard 3rd row and column.
+		cov[0][0] += 0.3;
+		cov[1][1] += 0.3;
 
-		//return vec3<f32>(cov[0][0], cov[0][1], cov[1][1]);
-        return cov2d;
+		return vec3<f32>(cov[0][0], cov[0][1], cov[1][1]);
 	}
 
 
 @binding(0) @group(0) var<uniform> uniforms: Uniforms;
 @binding(1) @group(1) var<storage, read> points: array<PointInput>;
 @binding(2) @group(1) var<storage, read> sorted_idx: array<u32>;
+
+const quadVertices = array<vec2<f32>, 6>(
+    vec2<f32>(-1.0, -1.0),
+    vec2<f32>(-1.0, 1.0),
+    vec2<f32>(1.0, -1.0),
+    vec2<f32>(1.0, 1.0),
+    vec2<f32>(-1.0, 1.0),
+    vec2<f32>(1.0, -1.0),
+);
 
 fn asfloat(hex: u32) -> f32 {
     let float_value = bitcast<f32>(hex);
@@ -325,90 +317,29 @@ fn vs_points(
     else{
 
         var quadPos = vec2<f32>(
-            f32(idx&1), 
-            f32((idx>>1)&1)
-            ) * 2.0 -1 ;
+        f32(idx&1), 
+        f32((idx>>1)&1)
+        ) * 2.0 -1 ;
         quadPos *=2;
         output.uv  = quadPos;
         output.position  = clipPos  ;
         
-
-        // cov3d:
-        let splatRotScaleMat : mat3x3<f32> = CalcMatrixFromRotationScale(point.rot, point.log_scale);			
-			
-		let sig :  mat3x3<f32> = splatRotScaleMat * transpose(splatRotScaleMat);
-		var cov3d0 : vec3f = vec3f (sig[0][0] , sig[0][1] , sig[0][2]  );
-		var cov3d1 : vec3f = vec3f (sig[1][1] , sig[1][2] , sig[2][2]  );
-		let _VecScreenParams = vec4f(${600},${600},0,0);
-
-		output.uv *= cov3d1.yz;
-        let splatScale = 1.0;
-        let splatScale2 = splatScale * splatScale;
-		cov3d0 *= splatScale2;
-		cov3d1 *= splatScale2;
-
-        // Cov2d:			
-        var viewPos:vec3f = (uniforms.viewMatrix * vec4<f32>(point.position, 1.0)).xyz;
-        let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  // = 1
-
-        let tanFovX: f32 = 1.0 / uniforms.projMatrix[0][0];
-        let tanFovY: f32 = 1.0 / (uniforms.projMatrix[1][1] * aspect);
-
-        let limx = 1.3 * tanFovX;
-        let limy = 1.3 * tanFovY;
-        let txtz = viewPos.x / viewPos.z;
-        let tytz = viewPos.y / viewPos.z;
-
-        viewPos.x = min(limx, max(-limx, txtz)) * viewPos.z;
-        viewPos.y = min(limy, max(-limy, tytz)) * viewPos.z;
-
-        let focal = _VecScreenParams.x * uniforms.projMatrix[0][0] / 2;
-        let J = mat3x3(
-            focal / viewPos.z, 0., -(focal * viewPos.x) / (viewPos.z * viewPos.z),
-            0., focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
-            0., 0., 0., 
-        );
-
-        let W = mat3x3<f32>(
-            uniforms.viewMatrix[0].xyz,
-            uniforms.viewMatrix[1].xyz,
-            uniforms.viewMatrix[2].xyz
-        );
-        
-        let T = J * W;
-
-        let Vrk = mat3x3(
-            cov3d0.x, cov3d0.y, cov3d0.z,
-            cov3d0.y, cov3d1.x, cov3d1.y,
-            cov3d0.z, cov3d1.y, cov3d1.z	
-        );
-
-        //var cov2d_mat = transpose(T) * transpose(Vrk) * T;
-        var cov2d_mat = T * ((Vrk) * transpose(T));
-        cov2d_mat[0][0] += 0.3;
-        cov2d_mat[1][1] += 0.3;
-
-        let cov2d :vec3f  = vec3f(cov2d_mat[0][0] , -cov2d_mat[0][1] , cov2d_mat[1][1]);
-        //let cov2d = compute_cov2d(point.position, point.log_scale, point.rot);
-
+        let cov2d = compute_cov2d(point.position, point.log_scale, point.rot);
         let det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
         let det_inv = 1.0 / det;
         let conic = vec3<f32>(cov2d.z * det_inv, -cov2d.y * det_inv, cov2d.x * det_inv);
         output.conic_and_opacity = vec4<f32>(conic, sigmoid(point.opacity_logit));
         
-        let diag1 =  cov2d.x;
-		let diag2 =  cov2d.z;
-		let offDiag =  cov2d.y;	
-        var mid =  0.5 *  (diag1 + diag2);
-        var radius = length(vec2<f32>((diag1 - diag2) /2.0  , offDiag));
+        var mid =  0.5 * (cov2d.x + cov2d.z);
+        var radius = length(vec2<f32>((cov2d.x - cov2d.z) /2.0  , cov2d.y));
         var lambda1 = mid + radius;
         var lambda2 = max(mid - radius , 0.1);
-        var diagVec : vec2<f32> = normalize(vec2<f32>(offDiag , lambda1 - diag1));
+        var diagVec : vec2<f32> = normalize(vec2<f32>(cov2d.y , lambda1 - lambda2));
         diagVec.y = -diagVec.y;
-
+        
         let maxSize :f32 = 4096.0;
-		let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;        
-		let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
+        let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;
+        let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
         
         let _ScreenParams : vec2<f32> = vec2<f32>(${screenPar_w} , ${screenPar_h});       
         
@@ -489,8 +420,8 @@ fn fs_main(input: PointOutput) -> @location(0) vec4<f32> {
     }
     
     
-    return vec4<f32>(input.color * alpha, alpha);
-    //return vec4<f32>(alpha,alpha,alpha, 1);
+    //return vec4<f32>(input.color * alpha, alpha);
+    return vec4<f32>(alpha,alpha,alpha, 1);
     //return vec4<f32>(color.rgb, 1);
     //return color;
 }
@@ -498,7 +429,6 @@ fn fs_main(input: PointOutput) -> @location(0) vec4<f32> {
 
     return shaderCode;
 }
-
 
 
 

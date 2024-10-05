@@ -161,60 +161,6 @@ function get_simple_shader(){
 		);
 	} 
 
-	fn compute_cov2d(position: vec3<f32>, log_scale: vec3<f32>, rot: vec4<f32> ) -> vec3<f32> {
-		let cov3d = compute_cov3d(log_scale, rot);		
-		let aspect = abs(uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ) ;  // = 1
-
-		var viewPos = uniforms.viewMatrix * vec4<f32>(position, 1.0);
-
-		let tanFovX: f32 =abs ( 1.0 / uniforms.projMatrix[0][0]);
-		let tanFovY: f32 =abs( 1.0 / (uniforms.projMatrix[1][1] * aspect) );   // -1 because forward is different
-
-		let screenParams_x = f32(${screen_size}); //TODO;
-		
-		let limX = 1.3 * tanFovX;
-		let limY = 1.3 * tanFovY;
-		
-		var _z = viewPos.z;
-		
-		viewPos.x = clamp(viewPos.x / _z, -limX, limX) * viewPos.z;
-    	viewPos.y = clamp(viewPos.y / _z, -limY, limY) * viewPos.z;
-		
-		let focal = screenParams_x * uniforms.projMatrix[0][0] / 2;
-		
-		let J = mat3x3(
-			focal / _z, 0.0, -(focal * viewPos.x) / (_z*_z),
-        	0.0, focal / _z, -(focal * viewPos.y) / (_z*_z),
-        	0.0, 0.0, 0.0
-		);
-
-		//let W = (mat3x3(uniforms.viewMatrix));	
-		
-		let W = mat3x3<f32>(
-			uniforms.viewMatrix[0].xyz,
-			uniforms.viewMatrix[1].xyz,
-			uniforms.viewMatrix[2].xyz
-		);
-		
-		let T = W * J;
-
-		let Vrk = mat3x3(
-			cov3d[0], cov3d[1], cov3d[2],
-			cov3d[1], cov3d[3], cov3d[4],
-			cov3d[2], cov3d[4], cov3d[5],			
-		);
-
-		var cov = transpose(T) * transpose(Vrk) * T;
-		
-
-		// Apply low-pass filter: every Gaussian should be at least
-		// one pixel wide/high. Discard 3rd row and column.
-		cov[0][0] += 0.3;
-		cov[1][1] += 0.3;
-
-		return vec3<f32>(cov[0][0], cov[0][1], cov[1][1]);
-	}
-
 	@group(0) @binding(0) var<storage, read> points: array<PointInput>;
 	@group(0) @binding(1) var<uniform> 				uniforms: Uniforms;
 	@group(0) @binding(2)  var<storage, read> sorted_idx: array<u32>;
@@ -247,8 +193,8 @@ function get_simple_shader(){
 		}
 		
 		
-		//return vec4<f32>(input.color * alpha, alpha);
-		return vec4<f32>(alpha,alpha,alpha, 1);
+		return vec4<f32>(input.color * alpha, alpha);
+		//return vec4<f32>(alpha,alpha,alpha, 1);
 		//return vec4<f32>(color.rgb, 1);
 		//return color;
 		}
@@ -289,16 +235,17 @@ function get_simple_shader(){
 			let sig :  mat3x3<f32> = splatRotScaleMat * transpose(splatRotScaleMat);
 			var cov3d0 : vec3f = vec3f (sig[0][0] , sig[0][1] , sig[0][2]  );
 			var cov3d1 : vec3f = vec3f (sig[1][1] , sig[1][2] , sig[2][2]  );
-			output.uv *= cov3d1.yz;
 			
-			let splatScale2 = point.log_scale * point.log_scale;
+			//output.uv *= cov3d1.yz;   // Why it broke?
+			let splatScale = 1.0;
+        	let splatScale2 = splatScale * splatScale;
 			cov3d0 *= splatScale2;
 			cov3d1 *= splatScale2;
 			
 			let _VecScreenParams = vec4f(${screen_size},${screen_size},0,0);
 
 			var viewPos:vec3f = (uniforms.viewMatrix * vec4<f32>(point.position, 1.0)).xyz;
-			let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  
+			let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  			
 
 			let tanFovX: f32 = 1.0 / uniforms.projMatrix[0][0];
 			let tanFovY: f32 = 1.0 / (uniforms.projMatrix[1][1] * aspect);
