@@ -1,4 +1,5 @@
 
+import { dot, dotF, saturate } from "./mylib";
 import { PackingType, StaticArray, Struct, vec3, vec4, f32 } from "./packing";
 import { Vec3 , Vec4  } from "wgpu-matrix";
 
@@ -262,25 +263,54 @@ export class PackedGaussians {
             const [newReadOffset, rawVertex] = this.readRawVertex(readOffset, vertexData, propertyTypes);
             readOffset = newReadOffset;
 
+            //console.log("origin" + rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
+
             // Pre-process rotation:
             var q : Vec4= [rawVertex.rot_0 , rawVertex.rot_1 , rawVertex.rot_2, rawVertex.rot_3];
             var qq = this.NormalizeSwizzleRotation(q);
             qq = this.PackSmallest3Rotation(qq);
-            // Note : When rotation = 0 , qq will be Nan
-            rawVertex.rot_0 = qq[0]||0
-            rawVertex.rot_1 = qq[1]||0
-            rawVertex.rot_2 = qq[2]||0
-            rawVertex.rot_3 = qq[3]||0
+            qq[0]||=0
+            qq[1]||=0
+            qq[2]||=0
+            qq[3]||=0
+            
+            
+            // Decode rotation in "DecodeRotation"
+            // Do not try to simplify this code !!!!
+            // For some resone, Vec4 does not work as excepted.
+            
+            let idx =  Math.max(Math.round(qq[3] * 3.0));
+            //var pq : Vec4 = [  rawVertex.rot_0 ,   rawVertex.rot_1 ,   rawVertex.rot_2 , 0]
+            //var pq : Vec4 = [  qq[0] ,   qq[1] ,  qq[3] , 0];
+            var a = qq[0] * Math.sqrt(2.0) - (1.0 / Math.sqrt(2.0));
+            var b = qq[1] * Math.sqrt(2.0) - (1.0 / Math.sqrt(2.0));
+            var c = qq[2] * Math.sqrt(2.0) - (1.0 / Math.sqrt(2.0));
+            var d = dotF( new Float32Array([a,b,c]) , new Float32Array([a,b,c])) ;
+            
+            d = Math.sqrt(1.0 -  saturate( d ));
+            
+            
+            var result_rot = new Float32Array(4);
+            if(idx ==0) { result_rot  =  new Float32Array([d , a , b , c]);}
+            if(idx ==1) { result_rot  = new Float32Array([a , d , b , c])}
+            if(idx ==2) { result_rot  = new Float32Array([a , b , d , c])}
+                       
+            
+            rawVertex.rot_0 = result_rot[0];
+            rawVertex.rot_1 = result_rot[1];
+            rawVertex.rot_2 = result_rot[2];
+            rawVertex.rot_3 = result_rot[3];
 
-            // Pre-process scale:            
-            /*
-            */
+
+            //console.log("rot :" +rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
+
+            // Pre-process scale:        
            rawVertex.scale_0 = this.LinearScale(rawVertex.scale_0);
            rawVertex.scale_1 = this.LinearScale(rawVertex.scale_1);
            rawVertex.scale_2 = this.LinearScale(rawVertex.scale_2);
            //rawVertex.scale_3 = this.LinearScale(rawVertex.scale_3);
            
-           //console.log(rawVertex);
+           //console.log("scale " + rawVertex.scale_0 + " " + rawVertex.scale_1 +" " + rawVertex.scale_2 );
 
 
             // Original code:
@@ -294,8 +324,7 @@ export class PackedGaussians {
                 positionWriteOffset,
                 [rawVertex.x, rawVertex.y, rawVertex.z],
                 positionsWriteView,
-            );
-            //console.log(rawVertex);
+            );            
             //console.log("vertex x " + rawVertex.x + " y " +  rawVertex.y + " z " + rawVertex.z);
         }
     }

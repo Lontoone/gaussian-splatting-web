@@ -80,11 +80,10 @@ export class Camera {
 
     static default(): Camera {
         return new Camera(
-            500,
-            500,
-            mat4.lookAt([0, 0, -20], [0, 0, 0], [0, 1, 0]),
-            //mat4.perspective(Math.PI / 4, 1, 0.1, 100),
-            mat4.perspective(1.04719755, 1, 0.3, 10000),
+            600,
+            600,
+            mat4.lookAt([0, 0 , -2], [0, 0, 0], [0, 1, 0]),            
+            mat4.perspective(1.04719755, 1, 0.03, 1000),
             600,
             600,
             1,
@@ -221,6 +220,7 @@ export class InteractiveCamera {
     }
 
     public setNewCamera(newCamera: Camera) {
+        console.log("set camera" + newCamera);
         this.camera = newCamera;
         this.setDirty();
     }
@@ -265,22 +265,27 @@ function worldToCamFromRT(R: Mat3, t: Vec3): Mat4 {
 function cameraFromJSON(rawCamera: CameraRaw, canvasW: number, canvasH: number): Camera {
     const fovX = focal2fov(rawCamera.fx, rawCamera.width);
     const fovY = focal2fov(rawCamera.fy, rawCamera.height);
-    const projectionMatrix = getProjectionMatrix(0.2, 100, fovX, fovY);
+    //const projectionMatrix = getProjectionMatrix(0.2, 100, fovX, fovY);
+    const projectionMatrix = mat4.perspective(1.04719755, 1, 0.03, 10000);
 
 
     const R = mat3.create(...rawCamera.rotation.flat());
     const T = rawCamera.position;
 
-    const viewMatrix = worldToCamFromRT(R, T);    
+    //const viewMatrix = worldToCamFromRT(R, T);    
+    const viewMatrix =  mat4.lookAt([0, 0 , -20], [0, 0, 0], [0, 1, 0]);
     return new Camera(
-        rawCamera.height,//canvasH,
-        rawCamera.width,//canvasW,
+        canvasH,
+        canvasW,
         viewMatrix,
         projectionMatrix,
         rawCamera.fx,
         rawCamera.fy,
-        Math.max(canvasW / rawCamera.width, canvasH / rawCamera.height),
+        1,
+        //Math.max(canvasW / rawCamera.width, canvasH / rawCamera.height),
     );
+    console.log(canvasH +" " +canvasW,);
+    console.log(rawCamera.fx +" " +rawCamera.fy,);
 }
 
 // A UI component that parses a JSON file containing a list of cameras and displays them as a list,

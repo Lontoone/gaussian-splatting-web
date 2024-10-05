@@ -459,36 +459,37 @@ export class Renderer {
 
         */
 
-       /*       
        this.simple_render.draw(this.numGaussians);
-       */
-        const RenderEncoder = this.context.device.createCommandEncoder();  
-        
-        const textureView = this.contextGpu.getCurrentTexture().createView();
-        const renderPassDescriptor: GPURenderPassDescriptor = {
+       /*   
+      
+       const RenderEncoder = this.context.device.createCommandEncoder();  
+       
+       const textureView = this.contextGpu.getCurrentTexture().createView();
+       const renderPassDescriptor: GPURenderPassDescriptor = {
             colorAttachments: [{
                 view: textureView,
                 clearValue: { r: 0, g: 0, b: 0, a: 0 },
                 storeOp: "store" as GPUStoreOp,
                 loadOp: "clear" as GPULoadOp,
-                }],
+            }],
                 };
                 
-        const passEncoder = RenderEncoder.beginRenderPass(renderPassDescriptor);
-        passEncoder.setPipeline(this.drawPipeline);
+                const passEncoder = RenderEncoder.beginRenderPass(renderPassDescriptor);
+                passEncoder.setPipeline(this.drawPipeline);
+                
+                passEncoder.setBindGroup(0, this.uniformsBindGroup);
+                passEncoder.setBindGroup(1, this.pointDataBindGroup);
+                
+                passEncoder.setIndexBuffer(this.drawIndexBuffer, "uint32" as GPUIndexFormat)        
+                //passEncoder.drawIndexed(this.numGaussians * 6, 1, 0, 0, 0);
+                passEncoder.drawIndexed( 6, this.numGaussians);
+                
+                passEncoder.end();
+                this.context.device.queue.submit([RenderEncoder.finish()]);
+                
+        */
         
-        passEncoder.setBindGroup(0, this.uniformsBindGroup);
-        passEncoder.setBindGroup(1, this.pointDataBindGroup);
-        
-        passEncoder.setIndexBuffer(this.drawIndexBuffer, "uint32" as GPUIndexFormat)        
-        //passEncoder.drawIndexed(this.numGaussians * 6, 1, 0, 0, 0);
-        passEncoder.drawIndexed( 6, this.numGaussians);
-        
-        passEncoder.end();
-        
-        this.context.device.queue.submit([RenderEncoder.finish()]);
-        
-        
+          
         // fps counter
         const now = performance.now();
         const fps = 1000 / (now - this.lastDraw);
@@ -518,14 +519,38 @@ export class Renderer {
         console.log(camera);
         let uniformsMatrixBuffer = new ArrayBuffer(this.uniformBuffer.size);
 
-        let viewMat = mat4toArrayOfArrays(mat4.transpose(camera.viewMatrix))
-        let projMat = mat4toArrayOfArrays(mat4.transpose(camera.perspective))
+        let viewMat = mat4toArrayOfArrays((camera.viewMatrix))
+        let projMat = mat4toArrayOfArrays((camera.perspective))
+        console.log(camera.perspective)
+         /* 
+        viewMat= [
+            [-0.77, 0.05, -0.62, 0],
+            [0.08459874242544174, 0.9963161945343018, -0.014019007794559002, 0],
+            [0.625243604183197, -0.06403473764657974, -0.7777983546257019, 0],
+            [-0.6592757105827332, -0.3823312222957611, 0.2661628723144531, 1],
+        ]
+        //viewMat[0][0]=1;
+            */  
+        // Hand-cord coordinate:
+        viewMat= [
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, -1, 0],
+            [0, 0, -20,1],
+        ]
+        projMat = 
+        [
+            [1.73205, 0, 0, 0],
+            [0, -1.73205, 0, 0],
+            [0, 0, 0.00030, -1],
+            [0, 0, 0.30009, 0],
+        ]
         console.log( viewMat);        
         console.log( projMat);
         let uniforms = {
-            viewMatrix: mat4toArrayOfArrays(camera.viewMatrix),
-            //projMatrix: mat4toArrayOfArrays(camera.getProjMatrix()),
-            projMatrix: mat4toArrayOfArrays( camera.perspective),
+            viewMatrix: viewMat,            
+            projMatrix: projMat,
+
             cameraPosition: Array.from(position),
             tanHalfFovX: tanHalfFovX,
             tanHalfFovY: tanHalfFovY,

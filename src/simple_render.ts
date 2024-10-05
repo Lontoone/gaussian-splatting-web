@@ -1,6 +1,6 @@
 import { GpuContext } from "./gpu_context";
 
-const screen_size = 500.0;  //temp
+const screen_size = 600.0;  //temp
 
 const shDeg3Code = `
     // spherical harmonic coefficients
@@ -68,7 +68,8 @@ const shDeg3Code = `
 function get_simple_shader(){
 	return `
 	${shDeg3Code}
-	const n_sh_coeffs = 16;
+	const n_sh_coeffs = 16;	
+
 	struct PointInput {
             @location(0) position: vec3<f32>,
             @location(1) log_scale: vec3<f32>,
@@ -93,7 +94,27 @@ function get_simple_shader(){
 		@location(2) conic_and_opacity: vec4<f32>,
 	};
 
-	
+	fn CalcMatrixFromRotationScale(rot: vec4<f32>, scale: vec3<f32>) -> mat3x3<f32> {
+		let modifier = uniforms.scale_modifier;
+			let ms = mat3x3<f32>(
+				scale.x  * modifier, 0.0, 0.0,
+				0.0, scale.y  * modifier, 0.0,
+				0.0, 0.0, scale.z  * modifier
+			);
+
+			let x = rot.x;
+			let y = rot.y;
+			let z = rot.z;
+			let w = rot.w;
+
+			let mr = mat3x3<f32>(
+				1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - w * z), 2.0 * (x * z + w * y),
+				2.0 * (x * y + w * z), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - w * x),
+				2.0 * (x * z - w * y), 2.0 * (y * z + w * x), 1.0 - 2.0 * (x * x + y * y)
+			);
+
+			return mr * ms;
+		}
 	fn sigmoid(x: f32) -> f32 {
 		if (x >= 0.) {
 			return 1. / (1. + exp(-x));
@@ -105,25 +126,14 @@ function get_simple_shader(){
 
 	fn compute_cov3d(log_scale: vec3<f32>, rot: vec4<f32>) -> array<f32, 6> {
 		// ------------ CalcMatrixFromRotationScale ----------------
-		//let modifier = uniforms.scale_modifier;
-		let modifier = 1.0;
+		let modifier = uniforms.scale_modifier;
+		
 		let S = mat3x3<f32>(
-			log_scale.x * modifier, 0., 0.,
-			0., log_scale.y * modifier, 0.,
-			0., 0., log_scale.z * modifier,
+			(log_scale.x) * modifier, 0., 0.,
+			0., (log_scale.y) * modifier, 0.,
+			0., 0., (log_scale.z) * modifier,
 		);
-		/*
-		let r = rot.x;
-		let x = rot.y;
-		let y = rot.z;
-		let z = rot.w;
-
-		let R = mat3x3<f32>(
-			1. - 2. * (y * y + z * z), 2. * (x * y - r * z), 2. * (x * z + r * y),
-			2. * (x * y + r * z), 1. - 2. * (x * x + z * z), 2. * (y * z - r * x),
-			2. * (x * z - r * y), 2. * (y * z + r * x), 1. - 2. * (x * x + y * y),
-		);
-		*/
+		
 		let x = rot.x;
 		let y = rot.y;
 		let z = rot.z;
@@ -135,69 +145,57 @@ function get_simple_shader(){
           	2*(x*z - w*y),   2*(y*z + w*x), 1-2*(x*x + y*y)
 		);
 
-		let M = S * R;
+		let M =  R * S;
 
 		// ------------ CalcCovariance3D ----------------
-		let Sigma = transpose(M) * M;		
+		let Sigma = M * transpose(M) ;		
 		return array<f32, 6>(
+			/*
+			*/
 			Sigma[0][0],
 			Sigma[0][1],
 			Sigma[0][2],
 			Sigma[1][1],
-			Sigma[1][2],
-			Sigma[2][2],
+			Sigma[1][2],			
+			Sigma[2][2],			
 		);
 	} 
 
-	fn compute_cov2d(position: vec3<f32>, log_scale: vec3<f32>, rot: vec4<f32>) -> vec3<f32> {
-		let cov3d = compute_cov3d(log_scale, rot);
-		let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  // = 1
+	fn compute_cov2d(position: vec3<f32>, log_scale: vec3<f32>, rot: vec4<f32> ) -> vec3<f32> {
+		let cov3d = compute_cov3d(log_scale, rot);		
+		let aspect = abs(uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ) ;  // = 1
 
 		var viewPos = uniforms.viewMatrix * vec4<f32>(position, 1.0);
 
-		let tanFovX: f32 = 1.0 / uniforms.projMatrix[0][0];
-		let tanFovY: f32 = 1.0 / (uniforms.projMatrix[1][1] * aspect);
-		//    	float tanFovX = rcp(matrixP._m00);
-    	//		float tanFovY = rcp(matrixP._m11 * aspect);
-		//let limx = 1.3 * uniforms.tan_fovx;
-		//let limy = 1.3 * uniforms.tan_fovy;
+		let tanFovX: f32 =abs ( 1.0 / uniforms.projMatrix[0][0]);
+		let tanFovY: f32 =abs( 1.0 / (uniforms.projMatrix[1][1] * aspect) );   // -1 because forward is different
 
 		let screenParams_x = f32(${screen_size}); //TODO;
 		
 		let limX = 1.3 * tanFovX;
 		let limY = 1.3 * tanFovY;
 		
-		viewPos.x = clamp(viewPos.x / viewPos.z, -limX, limX) * viewPos.z;
-    	viewPos.y = clamp(viewPos.y / viewPos.z, -limY, limY) * viewPos.z;
-		//viewPos.x = min(limx, max(-limx, txtz)) * t.z;
-		//viewPos.y = min(limy, max(-limy, tytz)) * t.z;
+		var _z = viewPos.z;
 		
-		//let txtz = t.x / t.z;
-		//let tytz = t.y / t.z;
-
+		viewPos.x = clamp(viewPos.x / _z, -limX, limX) * viewPos.z;
+    	viewPos.y = clamp(viewPos.y / _z, -limY, limY) * viewPos.z;
+		
 		let focal = screenParams_x * uniforms.projMatrix[0][0] / 2;
-
-		/*
-		let J = mat4x4(
-			uniforms.focal_x / t.z, 0., -(uniforms.focal_x * t.x) / (t.z * t.z), 0.,
-			0., uniforms.focal_y / t.z, -(uniforms.focal_y * t.y) / (t.z * t.z), 0.,
-			0., 0., 0., 0.,
-			0., 0., 0., 0.,
-		);
-		*/
-
+		
 		let J = mat3x3(
-			focal / viewPos.z, 0.0, -(focal * viewPos.x) / (viewPos.z * viewPos.z),
-        	0.0, focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
+			focal / _z, 0.0, -(focal * viewPos.x) / (_z*_z),
+        	0.0, focal / _z, -(focal * viewPos.y) / (_z*_z),
         	0.0, 0.0, 0.0
 		);
 
 		//let W = (mat3x3(uniforms.viewMatrix));	
+		
 		let W = mat3x3<f32>(
 			uniforms.viewMatrix[0].xyz,
 			uniforms.viewMatrix[1].xyz,
 			uniforms.viewMatrix[2].xyz
 		);
+		
 		let T = W * J;
 
 		let Vrk = mat3x3(
@@ -220,98 +218,312 @@ function get_simple_shader(){
 	@group(0) @binding(0) var<storage, read> points: array<PointInput>;
 	@group(0) @binding(1) var<uniform> 				uniforms: Uniforms;
 	@group(0) @binding(2)  var<storage, read> sorted_idx: array<u32>;
+	@group(0) @binding(3)  var<storage, read_write> debug_arr: array<u32>;
 		
 	@fragment
 	fn fs_main(input: PointOutput) ->@location(0) vec4f  {
-			//return vec4<f32>(1.0, 0.0, 1.0, 1.0); 			
-			//return vec4f(abs(input.uv) , 0 ,1);
-			//return vec4f(input.uv , 0 ,1);
-
-			var opacity = input.conic_and_opacity.w;   
-			var color : vec4<f32> = vec4<f32> (input.color ,opacity);
-			let power :f32 = -dot(input.uv, input.uv);
-			var alpha :f32 = exp(power);
-			if(opacity>=0){
-				alpha = saturate(alpha * opacity );
+		let selectedColor : vec3<f32> = vec3<f32> (1,0,1);
+		var opacity = input.conic_and_opacity.w;   
+		var color : vec4<f32> = vec4<f32> (input.color ,opacity);
+		let power :f32 = -dot(input.uv, input.uv);
+		var alpha :f32 = exp(power);
+		if(opacity>=0){
+			alpha = saturate(alpha * opacity );
+		}
+		/*
+		*/
+		else{
+			if(alpha > 7.0/255.0){
+				if(alpha < 10.0 /255.0){
+					alpha = 1;
+					color = vec4<f32> (selectedColor , color.a);
+				}
+				alpha = saturate(alpha +0.3);
 			}
-			if(alpha < 1.0/255.0){
-				discard;
-			}
-				
-			//return vec4<f32>(color.rgb, alpha);
-			//return vec4f(input.uv , 1 ,1);
-			return vec4<f32>(0,0,0, alpha);
-			//return vec4<f32>(alpha,alpha,alpha, 1);
+			color = vec4<f32> ( mix(input.color.rgb , selectedColor , 0.5 ) , color.a);
+		}
+		if(alpha < 1.0/255.0){
+			discard;
 		}
 		
+		
+		//return vec4<f32>(input.color * alpha, alpha);
+		return vec4<f32>(alpha,alpha,alpha, 1);
+		//return vec4<f32>(color.rgb, 1);
+		//return color;
+		}
+	fn asfloat(hex: u32) -> f32 {
+		let float_value = bitcast<f32>(hex);
+		return float_value;
+	}
 	@vertex
 	fn vs_points(
 		@builtin(vertex_index) vtxID: u32,
     	@builtin(instance_index) instID: u32,
 		@location(0) pos: vec3f ) -> PointOutput {
 		
-		let idx = vtxID;
-		let p_idx = sorted_idx[instID];
-		var point = points[p_idx] ;		
-		//var clipPos =  uniforms.projMatrix  * vec4f( point.position , 1);
-		var clipPos =  uniforms.projMatrix * uniforms.viewMatrix  * vec4f( point.position , 1);
-
 		var output: PointOutput;
-		var quadPos = vec2<f32>(
-			f32(idx&1), 
-			f32((idx>>1)&1)
-			) * 2.0 -1.0 ;
-        quadPos *=2;
+		let p_idx = sorted_idx[instID];
+		var point = points[p_idx] ;				
+		let idx = vtxID;
+
+		var clipPos =  uniforms.projMatrix * uniforms.viewMatrix  * vec4f( point.position , 1);	
+
+		if(clipPos.w<=0){
+			let nanfloat = asfloat(0x7fc00000);
+			output.position = vec4<f32>(nanfloat , nanfloat , nanfloat,nanfloat); // NaN discards the primitive
+		}
+		else{
 		
+			var quadPos = vec2<f32>(
+				f32(idx&1), 
+				f32((idx>>1)&1)
+				) * 2.0 -1 ;
+			quadPos *=2;
+			output.uv  = quadPos;
+			output.position  = clipPos  ;
+								
 
-		output.uv  = quadPos;		
-        output.position  = clipPos  ;
-		// Problem: 當rotation = 0 , cov2d.xyz = 0
-		let cov2d = compute_cov2d(point.position, point.log_scale, point.rot);
+			let splatRotScaleMat : mat3x3<f32> = CalcMatrixFromRotationScale(point.rot, point.log_scale);
 
-		//================= DecomposeCovariance =====================
-		let diag1 =  cov2d.x;
-		let diag2 =  cov2d.z;
-		let offDiag =  cov2d.y;				
+			let sig :  mat3x3<f32> = splatRotScaleMat * transpose(splatRotScaleMat);
+			var cov3d0 : vec3f = vec3f (sig[0][0] , sig[0][1] , sig[0][2]  );
+			var cov3d1 : vec3f = vec3f (sig[1][1] , sig[1][2] , sig[2][2]  );
+			output.uv *= cov3d1.yz;
+			
+			let splatScale2 = point.log_scale * point.log_scale;
+			cov3d0 *= splatScale2;
+			cov3d1 *= splatScale2;
+			
+			let _VecScreenParams = vec4f(${screen_size},${screen_size},0,0);
+
+			var viewPos:vec3f = (uniforms.viewMatrix * vec4<f32>(point.position, 1.0)).xyz;
+			let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  
+
+			let tanFovX: f32 = 1.0 / uniforms.projMatrix[0][0];
+			let tanFovY: f32 = 1.0 / (uniforms.projMatrix[1][1] * aspect);
+
+			let limx = 1.3 * tanFovX;
+			let limy = 1.3 * tanFovY;
+			let txtz = viewPos.x / viewPos.z;
+			let tytz = viewPos.y / viewPos.z;
+
+			viewPos.x = min(limx, max(-limx, txtz)) * viewPos.z;
+			viewPos.y = min(limy, max(-limy, tytz)) * viewPos.z;
+
+			let focal = _VecScreenParams.x * uniforms.projMatrix[0][0] / 2;
+			let J = mat3x3(
+				focal / viewPos.z, 0., -(focal * viewPos.x) / (viewPos.z * viewPos.z),
+				0., focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
+				0., 0., 0., 
+			);
+
+			let W = mat3x3<f32>(
+				uniforms.viewMatrix[0].xyz,
+				uniforms.viewMatrix[1].xyz,
+				uniforms.viewMatrix[2].xyz
+			);
+			
+			let T = J * W;
+
+			let Vrk = mat3x3(
+				cov3d0.x, cov3d0.y, cov3d0.z,
+				cov3d0.y, cov3d1.x, cov3d1.y,
+				cov3d0.z, cov3d1.y, cov3d1.z	
+			);
+
+			var cov2d_mat = T * ((Vrk) * transpose(T));
+			cov2d_mat[0][0] += 0.3;
+			cov2d_mat[1][1] += 0.3;
+
+			let cov2d :vec3f  = vec3f(cov2d_mat[0][0] , -cov2d_mat[0][1] , cov2d_mat[1][1]);
+			
+
+			let diag1 =  cov2d.x;
+			let diag2 =  cov2d.z;
+			let offDiag =  cov2d.y;					
+			
+			var mid =  0.5 *  (diag1 + diag2);
+			var radius = length(vec2<f32>((diag1 - diag2) /2.0  , offDiag));
+			var lambda1 = mid + radius;
+			var lambda2 = max(mid - radius , 0.1);
+			var diagVec : vec2<f32> = normalize(vec2<f32>(offDiag , lambda1 - diag1));
+			diagVec.y = -diagVec.y;
+			
+			let maxSize :f32 = 4096.0;
+			let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;        
+			let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
 		
-        
-        var mid =  0.5 *  (diag1 + diag2);
-        var radius = length(vec2<f32>((diag1 - diag2) /2.0  , offDiag));
-        var lambda1 = mid + radius;
-        var lambda2 = max(mid - radius , 0.1);
-        var diagVec : vec2<f32> = normalize(vec2<f32>(offDiag , lambda1 - diag1));
-        diagVec.y = -diagVec.y;
-        
-        let maxSize :f32 = 4096.0;
-        //let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;
-        let v1 : vec2<f32> = diagVec ;
-        let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
+		let _ScreenParams : vec2<f32> = vec2<f32>(${screen_size},${screen_size});       		
+		let deltaScreenPos :vec2<f32> = vec2<f32>(quadPos.x * v1 + quadPos.y * v2) * 2 /_ScreenParams.xy;		
 
-		// TODO: V1,V2 is 0  // lambda1 2 is 0
-		let _ScreenParams : vec2<f32> = vec2<f32>(${screen_size},${screen_size});       
-		//let deltaScreenPos :vec2<f32> = vec2<f32>(quadPos.x , quadPos.y) * 20 /_ScreenParams.xy;
-		let deltaScreenPos :vec2<f32> = vec2<f32>(quadPos.x * v1 + quadPos.y * v2) * 2 /_ScreenParams.xy;
-		
-
-		//output.uv = (v1);
-        
         output.position  .x += deltaScreenPos.x * clipPos.w;
         output.position  .y += deltaScreenPos.y * clipPos.w;
-
 		output.color = compute_color_from_sh(point.position, point.sh);
-
+		
 		//================= Other ======================
 		let det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;	
         let det_inv = 1.0 / det;
 		
         let conic = vec3<f32>(cov2d.z * det_inv, -cov2d.y * det_inv, cov2d.x * det_inv);
         output.conic_and_opacity = vec4<f32>(conic, sigmoid(point.opacity_logit));
+		}
 		return output;
-		//return  uniforms.projMatrix  * uniforms.viewMatrix *vec4f(pos.x, pos.y, pos.z, 1);
 
 	}
 	`
+}
 
+const screenPar_w = 600;
+function get_calcViewData_Shader(WORKGROUP_SIZE:Number , count : number){
+	return`
+		struct PointInput {
+            @location(0) position: vec3<f32>,
+            @location(1) log_scale: vec3<f32>,
+            @location(2) rot: vec4<f32>,
+            @location(3) opacity_logit: f32,
+            sh: array<vec3<f32>, 16>,
+        };
+		struct Uniforms {
+            viewMatrix: mat4x4<f32>,
+            projMatrix: mat4x4<f32>,
+            camera_position: vec3<f32>,
+            tan_fovx: f32,
+            tan_fovy: f32,
+            focal_x: f32,
+            focal_y: f32,
+            scale_modifier: f32,
+        };
+
+		fn CalcMatrixFromRotationScale(rot: vec4<f32>, scale: vec3<f32>) -> mat3x3<f32> {
+			let ms = mat3x3<f32>(
+				scale.x, 0.0, 0.0,
+				0.0, scale.y, 0.0,
+				0.0, 0.0, scale.z
+			);
+
+			let x = rot.x;
+			let y = rot.y;
+			let z = rot.z;
+			let w = rot.w;
+
+			let mr = mat3x3<f32>(
+				1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - w * z), 2.0 * (x * z + w * y),
+				2.0 * (x * y + w * z), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - w * x),
+				2.0 * (x * z - w * y), 2.0 * (y * z + w * x), 1.0 - 2.0 * (x * x + y * y)
+			);
+
+			return mr * ms;
+		}
+
+
+	 	@group(0) @binding(0) var<storage,read_write> 	splat_pos		: array<vec4f>;
+		@group(0) @binding(1) var<storage,read_write> 	splat_axis	: array<vec4f>; 				
+		@group(0) @binding(2) var<storage, read> points: array<PointInput>;
+		@group(0) @binding(3) var<uniform> 				uniforms: Uniforms;
+
+		@compute
+		@workgroup_size(  ${WORKGROUP_SIZE}, 1,1 )
+		fn main(
+			@builtin(workgroup_id) workgroup_id : vec3<u32>,
+			@builtin(local_invocation_id) local_invocation_id : vec3<u32>,
+			@builtin(global_invocation_id) global_invocation_id : vec3<u32>,
+			@builtin(local_invocation_index) local_invocation_index: u32,
+			@builtin(num_workgroups) num_workgroups: vec3<u32>) {
+			let workgroup_index =  
+				workgroup_id.x +
+				workgroup_id.y * num_workgroups.x +
+				workgroup_id.z * num_workgroups.x * num_workgroups.y;
+			let idx =
+				workgroup_index * ${WORKGROUP_SIZE} +
+				local_invocation_index;
+                
+            if(idx >= ${count}){
+                return;
+            }
+
+			var point = points[idx] ;				
+			var clipPos =  uniforms.projMatrix * uniforms.viewMatrix  * vec4f( point.position , 1);
+			splat_pos[idx] = clipPos ;
+
+
+			let splatRotScaleMat : mat3x3<f32> = CalcMatrixFromRotationScale(point.rot, point.log_scale);			
+			
+			let sig :  mat3x3<f32> = splatRotScaleMat * transpose(splatRotScaleMat);
+			var cov3d0 : vec3f = vec3f (sig[0][0] , sig[0][1] , sig[0][2]  );
+			var cov3d1 : vec3f = vec3f (sig[1][1] , sig[1][2] , sig[2][2]  );
+			
+			let _VecScreenParams = vec4f(${screen_size},${screen_size},0,0);
+
+			// Cov2d:			
+			var viewPos:vec3f = (uniforms.viewMatrix * vec4<f32>(point.position, 1.0)).xyz;
+			let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  // = 1
+
+			let tanFovX: f32 = 1.0 / uniforms.projMatrix[0][0];
+			let tanFovY: f32 = 1.0 / (uniforms.projMatrix[1][1] * aspect);
+
+			let limx = 1.3 * tanFovX;
+			let limy = 1.3 * tanFovY;
+			let txtz = viewPos.x / viewPos.z;
+			let tytz = viewPos.y / viewPos.z;
+
+			viewPos.x = min(limx, max(-limx, txtz)) * viewPos.z;
+			viewPos.y = min(limy, max(-limy, tytz)) * viewPos.z;
+
+			let focal = _VecScreenParams.x * uniforms.projMatrix[0][0] / 2;
+			let J = mat3x3(
+				focal / viewPos.z, 0., -(focal * viewPos.x) / (viewPos.z * viewPos.z),
+				0., focal / viewPos.z, -(focal * viewPos.y) / (viewPos.z * viewPos.z),
+				0., 0., 0., 
+			);
+
+			let W = mat3x3<f32>(
+				uniforms.viewMatrix[0].xyz,
+				uniforms.viewMatrix[1].xyz,
+				uniforms.viewMatrix[2].xyz
+			);
+			
+			let T = J * W;
+
+			let Vrk = mat3x3(
+				cov3d0.x, cov3d0.y, cov3d0.z,
+				cov3d0.y, cov3d1.x, cov3d1.y,
+				cov3d0.z, cov3d1.y, cov3d1.z	
+			);
+
+			//var cov2d_mat = transpose(T) * transpose(Vrk) * T;
+			var cov2d_mat = T * ((Vrk) * transpose(T));
+			cov2d_mat[0][0] += 0.3;
+			cov2d_mat[1][1] += 0.3;
+
+			let cov2d :vec3f  = vec3f(cov2d_mat[0][0] , -cov2d_mat[0][1] , cov2d_mat[1][1]);
+
+			let diag1 =  cov2d.x;
+			let diag2 =  cov2d.z;
+			let offDiag =  cov2d.y;						
+			
+			var mid =  0.5 *  (diag1 + diag2);
+			var radius = length(vec2<f32>((diag1 - diag2) /2.0  , offDiag));
+			var lambda1 = mid + radius;
+			var lambda2 = max(mid - radius , 0.1);
+			var diagVec : vec2<f32> = normalize(vec2<f32>(offDiag , lambda1 - diag1));
+			diagVec.y = -diagVec.y;
+			
+			let maxSize :f32 = 4096.0;
+			let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;        
+			let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
+			
+			//splat_pos[idx] = vec4f(diagVec,offDiag , lambda1 - diag1 );
+			//splat_pos[idx] = vec4f(v1 , v2);
+			//splat_pos[idx] = vec4f(viewPos ,0);
+			splat_pos[idx] = vec4f( Vrk[0].xyz,0);
+			//splat_pos[idx] = vec4f( focal, tanFovX, tanFovY, tytz);
+			//splat_pos[idx] = vec4f( diag1 , diag2 , offDiag,0);
+
+			splat_axis[idx] = vec4f(v1 , v2);
+		
+		}
+	`
 }
 
 
@@ -325,12 +537,19 @@ export class SimpleRender{
 	drawIndexBuffer  :GPUBuffer;	
 	pointBindGroup: GPUBindGroup;
 
+
+	pre_processPipeline : GPUComputePipeline;
+	pp_splat_pos_Buffer:GPUBuffer;
+	pp_splat_axis_Buffer:GPUBuffer;
+	
+	preprocess_BindGroup:GPUBindGroup;
+
 	constructor(
 		_contex:GpuContext,
 		_canvas:HTMLCanvasElement,
 		_pointBuffer:GPUBuffer,
 		_uniformBuffer:GPUBuffer,
-		_sortIdxBuffer:GPUBuffer,
+		_sortIdxBuffer:GPUBuffer,		
 	){
 		const presentationFormat = "rgba16float" as GPUTextureFormat;
 		const contextGpu = _canvas.getContext("webgpu");
@@ -352,6 +571,7 @@ export class SimpleRender{
 			usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST| GPUBufferUsage.COPY_SRC,
 		});
 		this.context.device.queue.writeBuffer(this.vertexBuffer, 0, vertices);
+		
 		const vertexBufferLayout : GPUVertexBufferLayout= {
 			arrayStride: 12,
 			attributes: [{
@@ -378,6 +598,7 @@ export class SimpleRender{
                     visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
                     buffer: {type: 'read-only-storage',},
                 },    
+				
             ],
         });       
 
@@ -396,6 +617,7 @@ export class SimpleRender{
                 binding: 2,
                 resource: {buffer: _sortIdxBuffer,},
             },
+			
 		]
 		});
 
@@ -404,6 +626,8 @@ export class SimpleRender{
             label: "Simple draw layout ",
             bindGroupLayouts : [draw_bindinglayout],
         });
+
+		//console.log(get_simple_shader());
 
 		this.pipeline = this.context.device.createRenderPipeline({
 			vertex: {
@@ -456,6 +680,91 @@ export class SimpleRender{
 		});
 		new Uint32Array(this.drawIndexBuffer.getMappedRange()).set(indices);
 		this.drawIndexBuffer.unmap();
+
+
+
+		//========================================================
+		//					Pre-process pipeline
+		//========================================================
+		
+		let point_number = 100 ; 
+		this.pp_splat_pos_Buffer = this.context.device.createBuffer({
+			size: point_number * 4 * 4,  
+			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST| GPUBufferUsage.COPY_SRC,
+		});
+		this.context.device.queue.writeBuffer(this.pp_splat_pos_Buffer, 0, new Float32Array(point_number*4));
+		this.pp_splat_axis_Buffer = this.context.device.createBuffer({
+			size: point_number * 4 * 4,  
+			usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST| GPUBufferUsage.COPY_SRC,
+		});
+		this.context.device.queue.writeBuffer(this.pp_splat_axis_Buffer, 0, new Float32Array(point_number*4));
+
+
+		const preprocess_bindinglayout = this.context.device.createBindGroupLayout({
+            entries: [
+                {
+                    binding: 0,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'storage',
+                    },
+                },     
+				{
+                    binding: 1,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {
+                        type: 'storage',
+                    },
+                },           
+				{
+                    binding: 2,
+                    visibility: GPUShaderStage.COMPUTE,
+                    buffer: {type: 'read-only-storage',},
+                },   
+				{
+                    binding: 3,
+                    visibility:GPUShaderStage.COMPUTE,
+                    buffer: {type: 'uniform',},
+                },          
+				  
+            ],
+        });        
+		this.preprocess_BindGroup = this.context.device.createBindGroup({
+            layout: preprocess_bindinglayout,
+            label: "pre_process BindGroup",
+            entries: [{
+                binding: 0,
+                resource: {
+                    buffer: this.pp_splat_pos_Buffer,
+                },
+            },{
+                binding: 1,
+                resource: {
+                    buffer: this.pp_splat_axis_Buffer,
+                },
+            },	{
+                binding: 2,
+                resource: {buffer: _pointBuffer,},
+            },
+			{
+                binding: 3,
+                resource: {buffer: _uniformBuffer,},
+            },
+		
+		],
+        });
+		const preprocess_pipeline_layout= this.context.device.createPipelineLayout({
+            bindGroupLayouts: [preprocess_bindinglayout],
+        });
+        this.pre_processPipeline  = this.context.device.createComputePipeline({
+            layout: preprocess_pipeline_layout, 
+            compute: {
+                module: this.context.device.createShaderModule({
+					code: get_calcViewData_Shader(8 , point_number ),
+				}),				
+                entryPoint: "main",
+            }
+        });
 	}
 
 
@@ -472,6 +781,47 @@ export class SimpleRender{
             }],
 		};
 
+
+		//============ Preprocess =============
+		const pp_encoder = this.context.device.createCommandEncoder();
+        const cs_ppr_pass = pp_encoder.beginComputePass();
+        cs_ppr_pass.setPipeline(this.pre_processPipeline);
+        cs_ppr_pass.setBindGroup(0 , this.preprocess_BindGroup);
+        cs_ppr_pass.dispatchWorkgroups(Math.max(gs_number/8 ,8) , 1,1);
+        cs_ppr_pass.end();
+		this.context.device.queue.submit([pp_encoder.finish()])
+
+		// paste data
+		const debug_size = Math.min(gs_number,100);
+		const _data_size = 4*4;
+		const _buffer_size = debug_size * _data_size;		
+		const buffer = this.pp_splat_pos_Buffer;       
+
+		const readBuffer = this.context.device.createBuffer({			
+			size: _buffer_size,
+			usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
+			mappedAtCreation: false,
+			label: "read back buffer"
+		});
+		const _cmdPass = this.context.device.createCommandEncoder();
+        
+		_cmdPass.copyBufferToBuffer(buffer, 0, readBuffer, 0, _buffer_size);
+		this.context.device.queue.submit([ _cmdPass.finish()]);
+				
+		readBuffer.mapAsync(GPUMapMode.READ).then(() => {
+			const result = new Float32Array(readBuffer.getMappedRange());
+			console.log("=============== Read Back =================");
+			console.log(result);
+			/*
+			for(var i = 0 ; i <  debug_size; i++){
+				console.log(result[i]);
+			}
+			*/			
+			readBuffer.unmap();
+		});
+
+
+		//============ Draw =============
 		const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);
 		passEncoder.setPipeline(this.pipeline);
 		passEncoder.setVertexBuffer(0, this.vertexBuffer);		

@@ -184,25 +184,25 @@ fn sigmoid(x: f32) -> f32 {
 
 fn compute_cov3d(log_scale: vec3<f32>, rot: vec4<f32>) -> array<f32, 6> {
 		let modifier = uniforms.scale_modifier;
-		let S = mat3x3<f32>(
+		let ms = mat3x3<f32>(
 			log_scale.x * modifier, 0., 0.,
 			0., log_scale.y * modifier, 0.,
 			0., 0., log_scale.z * modifier,
 		);
 
-		let r = rot.x;
-		let x = rot.y;
-		let y = rot.z;
-		let z = rot.w;
+		let x = rot.x;
+        let y = rot.y;
+        let z = rot.z;
+        let w = rot.w;
 
-		let R = mat3x3<f32>(
-			1. - 2. * (y * y + z * z), 2. * (x * y - r * z), 2. * (x * z + r * y),
-			2. * (x * y + r * z), 1. - 2. * (x * x + z * z), 2. * (y * z - r * x),
-			2. * (x * z - r * y), 2. * (y * z + r * x), 1. - 2. * (x * x + y * y),
-		);
+        let mr = mat3x3<f32>(
+            1.0 - 2.0 * (y * y + z * z), 2.0 * (x * y - w * z), 2.0 * (x * z + w * y),
+            2.0 * (x * y + w * z), 1.0 - 2.0 * (x * x + z * z), 2.0 * (y * z - w * x),
+            2.0 * (x * z - w * y), 2.0 * (y * z + w * x), 1.0 - 2.0 * (x * x + y * y)
+        );
 
-		let M = S * R;
-		let Sigma = transpose(M) * M;
+		let M =  mr * ms;
+		let Sigma = M * transpose(M) ;
 
 		return array<f32, 6>(
 			Sigma[0][0],
@@ -214,22 +214,17 @@ fn compute_cov3d(log_scale: vec3<f32>, rot: vec4<f32>) -> array<f32, 6> {
 		);
 	} 
 
-	fn ndc2pix(v: f32, size: u32) -> f32 {
-		return ((v + 1.0) * f32(size) - 1.0) * 0.5;
-	}
+	fn compute_cov2d(
+        position: vec3<f32>, log_scale: vec3<f32>, rot: vec4<f32> , cov3d:array<f32, 6>) -> vec3<f32> {
+		//let cov3d = compute_cov3d(log_scale, rot);
+		let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  // = 1
 
-	fn compute_cov2d(position: vec3<f32>, log_scale: vec3<f32>, rot: vec4<f32>) -> vec3<f32> {
-		let cov3d = compute_cov3d(log_scale, rot);
-		let aspect = 1.0;  //TODO!
 		var t = uniforms.viewMatrix * vec4<f32>(position, 1.0);
 		let tanFovX: f32 = 1.0 / uniforms.projMatrix[0][0];
 		let tanFovY: f32 = 1.0 / (uniforms.projMatrix[1][1] * aspect);
-		//    	float tanFovX = rcp(matrixP._m00);
-    	//		float tanFovY = rcp(matrixP._m11 * aspect);
-		//let limx = 1.3 * uniforms.tan_fovx;
-		//let limy = 1.3 * uniforms.tan_fovy;
+		
 
-		let screenParams_x = f32(${screenPar_w}); //TODO;
+		let screenParams_x = f32(${screenPar_w}); //TODO;		
 		let focal = screenParams_x * uniforms.projMatrix[0][0] / 2;
 
 		let limx = 1.3 * tanFovX;
@@ -240,14 +235,7 @@ fn compute_cov3d(log_scale: vec3<f32>, rot: vec4<f32>) -> array<f32, 6> {
 
 		t.x = min(limx, max(-limx, txtz)) * t.z;
 		t.y = min(limy, max(-limy, tytz)) * t.z;
-		/*
-		let J = mat4x4(
-			uniforms.focal_x / t.z, 0., -(uniforms.focal_x * t.x) / (t.z * t.z), 0.,
-			0., uniforms.focal_y / t.z, -(uniforms.focal_y * t.y) / (t.z * t.z), 0.,
-			0., 0., 0., 0.,
-			0., 0., 0., 0.,
-		);
-		*/
+
 		let J = mat4x4(
 			focal / t.z, 0., -(focal * t.x) / (t.z * t.z), 0.,
 			0., focal / t.z, -(focal * t.y) / (t.z * t.z), 0.,
@@ -256,9 +244,7 @@ fn compute_cov3d(log_scale: vec3<f32>, rot: vec4<f32>) -> array<f32, 6> {
 		);
 
 		let W = transpose(uniforms.viewMatrix);
-
-		//let T = W *  J;   // Origin , but transpose is better?
-		let T = W *  transpose(J);
+        let T = transpose(W) * J;
 
 		let Vrk = mat4x4(
 			cov3d[0], cov3d[1], cov3d[2], 0.,
@@ -274,7 +260,7 @@ fn compute_cov3d(log_scale: vec3<f32>, rot: vec4<f32>) -> array<f32, 6> {
 		cov[0][0] += 0.3;
 		cov[1][1] += 0.3;
 
-		return vec3<f32>(cov[0][0], cov[0][1], cov[1][1]);
+		return vec3<f32>(cov[0][0], -cov[0][1], cov[1][1]);
 	}
 
 
@@ -308,7 +294,6 @@ fn vs_points(
     let idx = vtxID;
 
     var clipPos = uniforms.projMatrix  * uniforms.viewMatrix *  vec4<f32>(point.position, 1.0);    
-    //var clipPos = uniforms.projMatrix  *  vec4<f32>(point.position, 1.0);    
 
     if(clipPos.w<=0){
         let nanfloat = asfloat(0x7fc00000);
@@ -317,14 +302,25 @@ fn vs_points(
     else{
 
         var quadPos = vec2<f32>(
-        f32(idx&1), 
-        f32((idx>>1)&1)
-        ) * 2.0 -1 ;
+            f32(idx&1), 
+            f32((idx>>1)&1)
+            ) * 2.0 -1 ;
         quadPos *=2;
         output.uv  = quadPos;
         output.position  = clipPos  ;
         
-        let cov2d = compute_cov2d(point.position, point.log_scale, point.rot);
+        var cov3d = compute_cov3d( point.log_scale, point.rot);
+        output.uv *= vec2f(cov3d[4] ,cov3d[5]);
+        let splatScale2 = point.log_scale * point.log_scale;
+        cov3d[0] *= splatScale2.x;
+        cov3d[1] *= splatScale2.y;
+        cov3d[2] *= splatScale2.z;
+        cov3d[3] *= splatScale2.x;
+        cov3d[4] *= splatScale2.y;
+        cov3d[5] *= splatScale2.z;
+        
+
+        let cov2d = compute_cov2d(point.position, point.log_scale, point.rot,cov3d);
         let det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
         let det_inv = 1.0 / det;
         let conic = vec3<f32>(cov2d.z * det_inv, -cov2d.y * det_inv, cov2d.x * det_inv);
@@ -350,44 +346,6 @@ fn vs_points(
         
         output.color = compute_color_from_sh(point.position, point.sh);
     }
-
-
-	
-    /*
-    let cov2d = compute_cov2d(point.position, point.log_scale, point.rot);
-    let det = cov2d.x * cov2d.z - cov2d.y * cov2d.y;
-    let det_inv = 1.0 / det;
-    let conic = vec3<f32>(cov2d.z * det_inv, -cov2d.y * det_inv, cov2d.x * det_inv);
-    output.conic_and_opacity = vec4<f32>(conic, sigmoid(point.opacity_logit));
-
-    var projPosition = uniforms.projMatrix * vec4<f32>(point.position, 1.0);   
-    if(projPosition.w <=0){
-        //behind camera
-        output.uv = vec2f(-99,-99);
-        return output;
-    }
-    var mid =  0.5 * (cov2d.x + cov2d.z);
-	var radius = length(vec2<f32>((cov2d.x - cov2d.z) /2.0  , cov2d.y));
-	var lambda1 = mid + radius;
-	var lambda2 = max(mid - radius , 0.1);
-	var diagVec : vec2<f32> = normalize(vec2<f32>(cov2d.y , lambda1 - lambda2));
-	diagVec.y = -diagVec.y;
-		
-	let maxSize :f32 = 4096.0;
-	let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;
-	let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
-
-    let _ScreenParams : vec2<f32> = vec2<f32>(${screenPar_w} , ${screenPar_h});
-    
-    output.uv  = quadPos;
-    output.position  = projPosition;
-    let deltaScreenPos :vec2<f32> = (quadPos.x * v1 + quadPos.y * v2) * 2 / _ScreenParams.xy;
-
-	output.position  .x += deltaScreenPos.x * projPosition.w;
-	output.position  .y += deltaScreenPos.y * projPosition.w;
-
-    output.color = compute_color_from_sh(point.position, point.sh);
-    */
 
     return output;
 }
@@ -420,8 +378,8 @@ fn fs_main(input: PointOutput) -> @location(0) vec4<f32> {
     }
     
     
-    return vec4<f32>(input.color * alpha, alpha);
-    //return vec4<f32>(alpha,alpha,alpha, 1);
+    //return vec4<f32>(input.color * alpha, alpha);
+    return vec4<f32>(alpha,alpha,alpha, 1);
     //return vec4<f32>(color.rgb, 1);
     //return color;
 }
