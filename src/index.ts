@@ -48,8 +48,8 @@ function handlePlyChange(event: any) {
 
 // loads the default ply file (bundled with the source) at startup, useful for dev
 async function loadDefaultPly() {
-    const url = "ply.ply";
-    //const url = "ply3.ply";
+    //const url = "ply.ply";
+    const url = "ply3.ply";
     loadingPopup.style.display = 'block'; // show loading popup
     const content = await fetch(url);
     const arrayBuffer = await content.arrayBuffer();

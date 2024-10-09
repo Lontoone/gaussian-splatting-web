@@ -265,22 +265,22 @@ function worldToCamFromRT(R: Mat3, t: Vec3): Mat4 {
 function cameraFromJSON(rawCamera: CameraRaw, canvasW: number, canvasH: number): Camera {
     const fovX = focal2fov(rawCamera.fx, rawCamera.width);
     const fovY = focal2fov(rawCamera.fy, rawCamera.height);
-    //const projectionMatrix = getProjectionMatrix(0.2, 100, fovX, fovY);
-    const projectionMatrix = mat4.perspective(1.04719755, 1, 0.03, 10000);
+    const projectionMatrix = getProjectionMatrix(0.2, 100, fovX, fovY);
+    //const projectionMatrix = mat4.perspective(1.04719755, 1, 0.03, 10000);
 
 
     const R = mat3.create(...rawCamera.rotation.flat());
     const T = rawCamera.position;
 
-    //const viewMatrix = worldToCamFromRT(R, T);    
-    const viewMatrix =  mat4.lookAt([0, 0 , -20], [0, 0, 0], [0, 1, 0]);
+    const viewMatrix = worldToCamFromRT(R, T);    
+    //const viewMatrix =  mat4.lookAt([0, 0 , -20], [0, 0, 0], [0, 1, 0]);
     return new Camera(
         canvasH,
         canvasW,
         viewMatrix,
         projectionMatrix,
-        rawCamera.fx,
-        rawCamera.fy,
+        canvasH,//rawCamera.fx,
+        canvasW,//rawCamera.fy,
         1,
         //Math.max(canvasW / rawCamera.width, canvasH / rawCamera.height),
     );

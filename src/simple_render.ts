@@ -193,8 +193,8 @@ function get_simple_shader(){
 		}
 		
 		
-		return vec4<f32>(input.color * alpha, alpha);
-		//return vec4<f32>(alpha,alpha,alpha, 1);
+		//return vec4<f32>(input.color * alpha, alpha);
+		return vec4<f32>(alpha,alpha,alpha, 1);
 		//return vec4<f32>(color.rgb, 1);
 		//return color;
 		}
@@ -236,7 +236,7 @@ function get_simple_shader(){
 			var cov3d0 : vec3f = vec3f (sig[0][0] , sig[0][1] , sig[0][2]  );
 			var cov3d1 : vec3f = vec3f (sig[1][1] , sig[1][2] , sig[2][2]  );
 			
-			//output.uv *= cov3d1.yz;   // Why it broke?
+			output.uv *= cov3d1.yz;   // Why it broke?
 			let splatScale = 1.0;
         	let splatScale2 = splatScale * splatScale;
 			cov3d0 *= splatScale2;
@@ -313,7 +313,7 @@ function get_simple_shader(){
         let det_inv = 1.0 / det;
 		
         let conic = vec3<f32>(cov2d.z * det_inv, -cov2d.y * det_inv, cov2d.x * det_inv);
-        output.conic_and_opacity = vec4<f32>(conic, sigmoid(point.opacity_logit));
+        	output.conic_and_opacity = vec4<f32>(conic, sigmoid(point.opacity_logit));
 		}
 		return output;
 

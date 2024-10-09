@@ -263,7 +263,7 @@ export class PackedGaussians {
             const [newReadOffset, rawVertex] = this.readRawVertex(readOffset, vertexData, propertyTypes);
             readOffset = newReadOffset;
 
-            //console.log("origin" + rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
+            console.log("origin" + rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
 
             // Pre-process rotation:
             var q : Vec4= [rawVertex.rot_0 , rawVertex.rot_1 , rawVertex.rot_2, rawVertex.rot_3];
@@ -302,7 +302,7 @@ export class PackedGaussians {
             rawVertex.rot_3 = result_rot[3];
 
 
-            //console.log("rot :" +rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
+            console.log("rot :" +rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
 
             // Pre-process scale:        
            rawVertex.scale_0 = this.LinearScale(rawVertex.scale_0);
@@ -325,7 +325,7 @@ export class PackedGaussians {
                 [rawVertex.x, rawVertex.y, rawVertex.z],
                 positionsWriteView,
             );            
-            //console.log("vertex x " + rawVertex.x + " y " +  rawVertex.y + " z " + rawVertex.z);
+            console.log("vertex x " + rawVertex.x + " y " +  rawVertex.y + " z " + rawVertex.z);
         }
     }
 }
