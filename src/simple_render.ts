@@ -193,14 +193,26 @@ function get_simple_shader(){
 		}
 		
 		
-		//return vec4<f32>(input.color * alpha, alpha);
-		return vec4<f32>(alpha,alpha,alpha, 1);
+		return vec4<f32>(input.color * alpha, alpha);
+		//return vec4<f32>(alpha,alpha,alpha, 1);
 		//return vec4<f32>(color.rgb, 1);
 		//return color;
 		}
 	fn asfloat(hex: u32) -> f32 {
 		let float_value = bitcast<f32>(hex);
 		return float_value;
+	}
+	fn safe_normalize_v2(v: vec2<f32>) -> vec2<f32> {
+		let epsilon = 1e-10;
+		var x = v.x;
+		var y = v.y;
+		if(v.x !=0){
+			x= x +epsilon;
+		}
+		if(v.y!=0){
+			y= y +epsilon;
+		}
+		return normalize( vec2f(x,y));
 	}
 	@vertex
 	fn vs_points(
@@ -236,7 +248,7 @@ function get_simple_shader(){
 			var cov3d0 : vec3f = vec3f (sig[0][0] , sig[0][1] , sig[0][2]  );
 			var cov3d1 : vec3f = vec3f (sig[1][1] , sig[1][2] , sig[2][2]  );
 			
-			output.uv *= cov3d1.yz;   // Why it broke?
+			//output.uv *= cov3d1.yz;   // Why it broke?
 			let splatScale = 1.0;
         	let splatScale2 = splatScale * splatScale;
 			cov3d0 *= splatScale2;
@@ -294,7 +306,7 @@ function get_simple_shader(){
 			var radius = length(vec2<f32>((diag1 - diag2) /2.0  , offDiag));
 			var lambda1 = mid + radius;
 			var lambda2 = max(mid - radius , 0.1);
-			var diagVec : vec2<f32> = normalize(vec2<f32>(offDiag , lambda1 - diag1));
+			var diagVec : vec2<f32> = safe_normalize_v2(vec2<f32>(offDiag , lambda1 - diag1));
 			diagVec.y = -diagVec.y;
 			
 			let maxSize :f32 = 4096.0;
@@ -361,6 +373,18 @@ function get_calcViewData_Shader(WORKGROUP_SIZE:Number , count : number){
 			);
 
 			return mr * ms;
+		}
+		fn safe_normalize_v2(v: vec2<f32>) -> vec2<f32> {
+			let epsilon = 1e-10;
+			var x = v.x;
+			var y = v.y;
+			if(v.x !=0){
+				x= x +epsilon;
+			}
+			if(v.y!=0){
+				y= y +epsilon;
+			}
+			return normalize( vec2f(x,y));
 		}
 
 
@@ -447,13 +471,16 @@ function get_calcViewData_Shader(WORKGROUP_SIZE:Number , count : number){
 
 			let diag1 =  cov2d.x;
 			let diag2 =  cov2d.z;
-			let offDiag =  cov2d.y;						
+			var offDiag =  cov2d.y;						
 			
 			var mid =  0.5 *  (diag1 + diag2);
 			var radius = length(vec2<f32>((diag1 - diag2) /2.0  , offDiag));
 			var lambda1 = mid + radius;
 			var lambda2 = max(mid - radius , 0.1);
-			var diagVec : vec2<f32> = normalize(vec2<f32>(offDiag , lambda1 - diag1));
+
+			
+			//var diagVec : vec2<f32> = normalize(vec2<f32>(offDiag , lambda1 - diag1));
+			var diagVec : vec2<f32> = safe_normalize_v2(vec2<f32>(offDiag , lambda1 - diag1));
 			diagVec.y = -diagVec.y;
 			
 			let maxSize :f32 = 4096.0;
@@ -461,9 +488,10 @@ function get_calcViewData_Shader(WORKGROUP_SIZE:Number , count : number){
 			let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
 			
 			//splat_pos[idx] = vec4f(diagVec,offDiag , lambda1 - diag1 );
-			//splat_pos[idx] = vec4f(v1 , v2);
-			//splat_pos[idx] = vec4f(viewPos ,0);
-			splat_pos[idx] = vec4f( Vrk[0].xyz,0);
+			//splat_pos[idx] = vec4f(point.rot);
+			splat_pos[idx] = vec4f(v1 , v2);
+			//splat_pos[idx] = vec4f(splatRotScaleMat[idx].xyz ,0);
+			//splat_pos[idx] = vec4f( cov2d_mat[idx] , f32(idx));
 			//splat_pos[idx] = vec4f( focal, tanFovX, tanFovY, tytz);
 			//splat_pos[idx] = vec4f( diag1 , diag2 , offDiag,0);
 
@@ -594,14 +622,15 @@ export class SimpleRender{
 					blend: {
 							//one-minus-dst-alpha
                             color: {
+                                srcFactor: "one-minus-dst-alpha" as GPUBlendFactor,                                
                                 //srcFactor: "src-alpha" as GPUBlendFactor,
-                                srcFactor: "one-minus-dst-alpha" as GPUBlendFactor,
                                 dstFactor: "one" as GPUBlendFactor,
                                 operation: "add" as GPUBlendOperation,
                             },
                             alpha: {
-                                //srcFactor: "src-alpha" as GPUBlendFactor,
                                 srcFactor: "one-minus-dst-alpha" as GPUBlendFactor,
+                                //srcFactor: "src-alpha" as GPUBlendFactor,
+								
                                 dstFactor: "one" as GPUBlendFactor,
                                 operation: "add" as GPUBlendOperation,
                             },
@@ -722,7 +751,7 @@ export class SimpleRender{
 		const renderPassDescriptor : GPURenderPassDescriptor = {
 			colorAttachments: [{
                 view: textureView,
-                clearValue: { r: 0, g: 0, b: 0, a: 0 },
+                clearValue: { r: 0, g: 0, b: 0, a: 0},
                 storeOp: "store" as GPUStoreOp,
                 loadOp: "clear" as GPULoadOp,
             }],

@@ -162,7 +162,7 @@ export class PackedGaussians {
         return arrangedVertex;
     }
     private normalizeV4(xyzw : Vec4):Vec4{
-        let len = Math.sqrt(xyzw[0] *xyzw[0] + xyzw[1]*xyzw[1] + xyzw[2]*xyzw[2]+xyzw[3]*xyzw[3] );
+        let len = Math.sqrt(xyzw[0] *xyzw[0] + xyzw[1]*xyzw[1] + xyzw[2]*xyzw[2]+xyzw[3]*xyzw[3] );        
         return [xyzw[0] / len , xyzw[1] / len,xyzw[2] / len,xyzw[3] / len];
     }
     private NormalizeSwizzleRotation(wxyz:Vec4) : Vec4
@@ -192,8 +192,7 @@ export class PackedGaussians {
 
         if(index==0){q= [q[1] , q[2], q[3] , q[0]]};
         if(index==1){q= [q[0] , q[2], q[3] , q[1]]};
-        if(index==2){q= [q[0] , q[1], q[3] , q[2]]};
-        
+        if(index==2){q= [q[0] , q[1], q[3] , q[2]]};        
         let s = (q[4]>=0? 1: -1);
         var q3d :Vec3 = [q[0] *s, q[1] *s, q[2]*s] ;
         var three  = q3d;
@@ -263,7 +262,7 @@ export class PackedGaussians {
             const [newReadOffset, rawVertex] = this.readRawVertex(readOffset, vertexData, propertyTypes);
             readOffset = newReadOffset;
 
-            console.log("origin" + rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
+            //console.log("origin" + rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
 
             // Pre-process rotation:
             var q : Vec4= [rawVertex.rot_0 , rawVertex.rot_1 , rawVertex.rot_2, rawVertex.rot_3];
@@ -273,6 +272,7 @@ export class PackedGaussians {
             qq[1]||=0
             qq[2]||=0
             qq[3]||=0
+            //console.log(qq); // Correct
             
             
             // Decode rotation in "DecodeRotation"
@@ -287,22 +287,20 @@ export class PackedGaussians {
             var c = qq[2] * Math.sqrt(2.0) - (1.0 / Math.sqrt(2.0));
             var d = dotF( new Float32Array([a,b,c]) , new Float32Array([a,b,c])) ;
             
-            d = Math.sqrt(1.0 -  saturate( d ));
+            d = Math.sqrt(1.0 -  saturate( d ));             
             
-            
-            var result_rot = new Float32Array(4);
+            var result_rot = new Float32Array([a,b,c,d]);
             if(idx ==0) { result_rot  =  new Float32Array([d , a , b , c]);}
             if(idx ==1) { result_rot  = new Float32Array([a , d , b , c])}
             if(idx ==2) { result_rot  = new Float32Array([a , b , d , c])}
-                       
-            
+                                 
             rawVertex.rot_0 = result_rot[0];
             rawVertex.rot_1 = result_rot[1];
             rawVertex.rot_2 = result_rot[2];
             rawVertex.rot_3 = result_rot[3];
 
 
-            console.log("rot :" +rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
+            //console.log("rot :" +rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
 
             // Pre-process scale:        
            rawVertex.scale_0 = this.LinearScale(rawVertex.scale_0);
@@ -325,7 +323,7 @@ export class PackedGaussians {
                 [rawVertex.x, rawVertex.y, rawVertex.z],
                 positionsWriteView,
             );            
-            console.log("vertex x " + rawVertex.x + " y " +  rawVertex.y + " z " + rawVertex.z);
+            //console.log("vertex x " + rawVertex.x + " y " +  rawVertex.y + " z " + rawVertex.z);
         }
     }
 }
