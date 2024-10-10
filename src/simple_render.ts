@@ -489,11 +489,12 @@ function get_calcViewData_Shader(WORKGROUP_SIZE:Number , count : number){
 			
 			//splat_pos[idx] = vec4f(diagVec,offDiag , lambda1 - diag1 );
 			//splat_pos[idx] = vec4f(point.rot);
-			splat_pos[idx] = vec4f(v1 , v2);
+			//splat_pos[idx] = vec4f(v1 , v2);
 			//splat_pos[idx] = vec4f(splatRotScaleMat[idx].xyz ,0);
 			//splat_pos[idx] = vec4f( cov2d_mat[idx] , f32(idx));
 			//splat_pos[idx] = vec4f( focal, tanFovX, tanFovY, tytz);
 			//splat_pos[idx] = vec4f( diag1 , diag2 , offDiag,0);
+			splat_pos[idx] = vec4f( viewPos,0);
 
 			splat_axis[idx] = vec4f(v1 , v2);
 		
@@ -518,6 +519,7 @@ export class SimpleRender{
 	pp_splat_axis_Buffer:GPUBuffer;
 	
 	preprocess_BindGroup:GPUBindGroup;
+	framebuffer  : GPUTexture;
 
 	constructor(
 		_contex:GpuContext,
@@ -655,9 +657,7 @@ export class SimpleRender{
 			mappedAtCreation: true,
 		});
 		new Uint32Array(this.drawIndexBuffer.getMappedRange()).set(indices);
-		this.drawIndexBuffer.unmap();
-
-
+		this.drawIndexBuffer.unmap();		
 
 		//========================================================
 		//					Pre-process pipeline
@@ -741,15 +741,29 @@ export class SimpleRender{
                 entryPoint: "main",
             }
         });
+
+
+		//=========================
+		//			Texture view
+		//=========================
+		const textureDescriptor: GPUTextureDescriptor = {
+			size: [_canvas.width, _canvas.height, 1],
+			format: presentationFormat,
+			usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING,
+		};
+		const framebufferTexture: GPUTexture = this.context.device.createTexture(textureDescriptor);		
+		this.framebuffer = framebufferTexture;
 	}
 
 
 	public draw(gs_number:number) :void{
 		const commandEncoder = this.context.device.createCommandEncoder();
-		const textureView = this.contextGpu.getCurrentTexture().createView();
+		//const textureView = this.contextGpu.getCurrentTexture().createView();
+		const textureView = this.framebuffer.createView();
 
 		const renderPassDescriptor : GPURenderPassDescriptor = {
 			colorAttachments: [{
+                //view: textureView,
                 view: textureView,
                 clearValue: { r: 0, g: 0, b: 0, a: 0},
                 storeOp: "store" as GPUStoreOp,

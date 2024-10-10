@@ -17,6 +17,7 @@ import { GpuContext } from './gpu_context';
 import { DepthSorter } from './depth_sorter';
 import { RadixSortKernel } from 'webgpu-radix-sort';
 import { SimpleRender } from './simple_render';
+import { PostProcessRenderer } from './post_process_render';
 
 
 const uniformLayout = new Struct([
@@ -71,6 +72,7 @@ export class Renderer {
     lastDraw: number;
 
     simple_render : SimpleRender ; //dummy renderer
+    post_renderer : PostProcessRenderer;
 
     destroyCallback: (() => void) | null = null;
 
@@ -394,6 +396,7 @@ export class Renderer {
             this.pointDataBuffer,
             this.uniformBuffer,
             this.sort_key_buffer); //dummy 
+        this.post_renderer = new PostProcessRenderer(context,canvas , this.simple_render.framebuffer);
         // start the animation loop
         requestAnimationFrame(() => this.animate(true));
     }
@@ -460,6 +463,7 @@ export class Renderer {
         */
 
        this.simple_render.draw(this.numGaussians);
+       this.post_renderer.draw();
        /*   
       
        const RenderEncoder = this.context.device.createCommandEncoder();  
@@ -544,13 +548,21 @@ export class Renderer {
             [0, 0, -1, 0],
             [0, 0, -20,1],
         ]   
+       
+        viewMat= [
+            [1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, -1, 0],
+            [-0.2712317, 1.554028, 2.063166, 1],
+        ]   
         projMat = 
         [
             [1.73205, 0, 0, 0],
             [0, -1.73205, 0, 0],
             [0, 0, 0.00030, -1],
             [0, 0, 0.30009, 0],
-        ]  */
+        ]  
+        */
         //console.log( viewMat);        
         //console.log( projMat);
         let uniforms = {
