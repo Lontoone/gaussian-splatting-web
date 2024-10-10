@@ -61,10 +61,23 @@ export class PostProcessRenderer{
 			@group(0) @binding(1) var mySampler: sampler;
 			@fragment
 			fn fragmentMain(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4f {
-			    let uv = fragCoord.xy / vec2<f32>(${this.canvas.width}, ${this.canvas.height});
+			    var uv = fragCoord.xy / vec2<f32>(${this.canvas.width}, ${this.canvas.height});
+				uv.y = 1-uv.y;
 				//return vec4f(uv.x, uv.y, 0, 1);			
-				
-				return textureSample(myTexture, mySampler, uv)  ;//+ vec4f(uv.x, uv.y, 1, 0.2);
+				var color:vec4f = textureSample(myTexture, mySampler, uv)  ;
+
+				color.a = saturate(color.a * 1.5);
+
+				if(color.a <0.99){
+					discard;
+				}
+				/*
+				let pw = 1.0/2.2;
+				color.r= pow(color.r, pw);
+				color.g= pow(color.g, pw);
+				color.b= pow(color.b, pw);
+				*/
+				return color;
 			}
 			`
 		});
@@ -140,7 +153,7 @@ export class PostProcessRenderer{
 		const renderPassDescriptor : GPURenderPassDescriptor = {
 			colorAttachments: [{
                 view: textureView,
-                clearValue: { r: 0, g: 0, b: 0, a: 1},
+                clearValue: { r: 0, g: 0, b: 0, a: 0},
                 storeOp: "store" as GPUStoreOp,
                 loadOp: "clear" as GPULoadOp,
             }],
