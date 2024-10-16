@@ -62,21 +62,16 @@ export class PostProcessRenderer{
 			@fragment
 			fn fragmentMain(@builtin(position) fragCoord: vec4<f32>) -> @location(0) vec4f {
 			    var uv = fragCoord.xy / vec2<f32>(${this.canvas.width}, ${this.canvas.height});
-				uv.y = 1-uv.y;
-				//return vec4f(uv.x, uv.y, 0, 1);			
+				uv.y = 1-uv.y;				
 				var color:vec4f = textureSample(myTexture, mySampler, uv)  ;
-
+				
 				color.a = saturate(color.a * 1.5);
 
 				if(color.a <0.99){
-					discard;
+					//discard;
+					color.a = pow(color.a , 4);
 				}
-				/*
-				let pw = 1.0/2.2;
-				color.r= pow(color.r, pw);
-				color.g= pow(color.g, pw);
-				color.b= pow(color.b, pw);
-				*/
+				
 				return color;
 			}
 			`

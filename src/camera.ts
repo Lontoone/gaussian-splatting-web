@@ -263,11 +263,16 @@ function worldToCamFromRT(R: Mat3, t: Vec3): Mat4 {
 
 // converting camera coordinate systems is always black magic :(
 function cameraFromJSON(rawCamera: CameraRaw, canvasW: number, canvasH: number): Camera {
-    const fovX = focal2fov(rawCamera.fx, rawCamera.width);
-    const fovY = focal2fov(rawCamera.fy, rawCamera.height);
+    //const fovX = focal2fov(rawCamera.fx, rawCamera.width);
+    //const fovY = focal2fov(rawCamera.fy, rawCamera.height);
+    const asp = window.innerHeight/window.innerWidth;
+    const fovX = focal2fov(rawCamera.fx *asp, window.innerWidth);
+    const fovY = focal2fov(rawCamera.fy *asp, window.innerHeight);
     const projectionMatrix = getProjectionMatrix(0.2, 100, fovX, fovY);
     //const projectionMatrix = mat4.perspective(1.04719755, 1, 0.03, 10000);
+    //const projectionMatrix = mat4.perspective(1.04719755, window.innerWidth/window.innerHeight, 0.03, 10000);
 
+    console.log(projectionMatrix);
 
     const R = mat3.create(...rawCamera.rotation.flat());
     const T = rawCamera.position;

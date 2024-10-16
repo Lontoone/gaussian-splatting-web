@@ -14,6 +14,10 @@ const cameraFileInput = document.getElementById('cameraButton')! as HTMLInputEle
 const cameraList = document.getElementById('cameraList')! as HTMLUListElement;
 const plyFileInput = document.getElementById('plyButton') as HTMLInputElement;
 
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
 // create the camera and renderer globals
 let interactiveCamera = InteractiveCamera.default(canvas);
 var currentRenderer: Renderer;

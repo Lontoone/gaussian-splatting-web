@@ -1,6 +1,6 @@
 import { GpuContext } from "./gpu_context";
 
-const screen_size = 600.0;  //temp
+const screen_size = 600.0;  //this is only for debug, do not use it
 
 const shDeg3Code = `
     // spherical harmonic coefficients
@@ -65,7 +65,7 @@ const shDeg3Code = `
         return max(result, vec3<f32>(0.));
     }
 `;
-function get_simple_shader(){
+function get_simple_shader(width:number , height:number){
 	return `
 	${shDeg3Code}
 	const n_sh_coeffs = 16;	
@@ -254,7 +254,7 @@ function get_simple_shader(){
 			cov3d0 *= splatScale2;
 			cov3d1 *= splatScale2;
 			
-			let _VecScreenParams = vec4f(${screen_size},${screen_size},0,0);
+			let _VecScreenParams = vec4f(${width},${height},0,0);
 
 			var viewPos:vec3f = (uniforms.viewMatrix * vec4<f32>(point.position, 1.0)).xyz;
 			let aspect = uniforms.projMatrix[0][0] / uniforms.projMatrix[1][1] ;  			
@@ -313,7 +313,7 @@ function get_simple_shader(){
 			let v1 : vec2<f32> = min(sqrt(2.0 * lambda1) , maxSize) * diagVec;        
 			let v2 : vec2<f32> = min(sqrt(2.0 * lambda2) , maxSize) * vec2<f32>(diagVec.y , -diagVec.x);
 		
-		let _ScreenParams : vec2<f32> = vec2<f32>(${screen_size},${screen_size});       		
+		let _ScreenParams : vec2<f32> = vec2<f32>(${width},${height});       		
 		let deltaScreenPos :vec2<f32> = vec2<f32>(quadPos.x * v1 + quadPos.y * v2) * 2 /_ScreenParams.xy;		
 
         output.position  .x += deltaScreenPos.x * clipPos.w;
@@ -604,19 +604,19 @@ export class SimpleRender{
             bindGroupLayouts : [draw_bindinglayout],
         });
 
-		//console.log(get_simple_shader());
+		let shader_code = get_simple_shader( _canvas.width , _canvas.height);
 
 		this.pipeline = this.context.device.createRenderPipeline({
 			vertex: {
 				module: this.context.device.createShaderModule({
-					code: get_simple_shader(),
+					code: shader_code,
 				}),
 				entryPoint: 'vs_points',		
 				buffers:[vertexBufferLayout]		
 			},
 			fragment: {
 				module: this.context.device.createShaderModule({
-					code: get_simple_shader(),
+					code: shader_code,
 				}),
 				entryPoint: 'fs_main',
 				targets: [{
