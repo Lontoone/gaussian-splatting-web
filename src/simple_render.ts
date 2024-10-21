@@ -605,6 +605,7 @@ export class SimpleRender{
         });
 
 		let shader_code = get_simple_shader( _canvas.width , _canvas.height);
+		console.log("canvas w,h" + +_canvas.width +" " + _canvas.height);
 
 		this.pipeline = this.context.device.createRenderPipeline({
 			vertex: {
@@ -660,7 +661,7 @@ export class SimpleRender{
 		this.drawIndexBuffer.unmap();		
 
 		//========================================================
-		//					Pre-process pipeline
+		//					Debug pipeline
 		//========================================================
 		
 		let point_number = 100 ; 
@@ -773,6 +774,7 @@ export class SimpleRender{
 
 
 		//============ Preprocess =============
+		/*
 		const pp_encoder = this.context.device.createCommandEncoder();
         const cs_ppr_pass = pp_encoder.beginComputePass();
         cs_ppr_pass.setPipeline(this.pre_processPipeline);
@@ -802,14 +804,10 @@ export class SimpleRender{
 			const result = new Float32Array(readBuffer.getMappedRange());
 			console.log("=============== Read Back =================");
 			console.log(result);
-			/*
-			for(var i = 0 ; i <  debug_size; i++){
-				console.log(result[i]);
-			}
-			*/			
+			
 			readBuffer.unmap();
 		});
-
+		*/
 
 		//============ Draw =============
 		const passEncoder = commandEncoder.beginRenderPass(renderPassDescriptor);

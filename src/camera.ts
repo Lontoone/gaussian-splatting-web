@@ -80,8 +80,8 @@ export class Camera {
 
     static default(): Camera {
         return new Camera(
-            600,
-            600,
+            window.innerHeight,
+            window.innerWidth,
             mat4.lookAt([0, 0 , -2], [0, 0, 0], [0, 1, 0]),            
             mat4.perspective(1.04719755, 1, 0.03, 1000),
             600,
@@ -265,14 +265,15 @@ function worldToCamFromRT(R: Mat3, t: Vec3): Mat4 {
 function cameraFromJSON(rawCamera: CameraRaw, canvasW: number, canvasH: number): Camera {
     //const fovX = focal2fov(rawCamera.fx, rawCamera.width);
     //const fovY = focal2fov(rawCamera.fy, rawCamera.height);
-    const asp = window.innerHeight/window.innerWidth;
-    const fovX = focal2fov(rawCamera.fx *asp, window.innerWidth);
-    const fovY = focal2fov(rawCamera.fy *asp, window.innerHeight);
+    //const asp = canvasW /  canvasH;    
+    //const fovX = focal2fov(rawCamera.fx, window.innerWidth);
+    //const fovY = focal2fov(rawCamera.fy, window.innerHeight);
+    const fovX = focal2fov(rawCamera.fx , canvasW);
+    const fovY = focal2fov(rawCamera.fy, canvasH);
     const projectionMatrix = getProjectionMatrix(0.2, 100, fovX, fovY);
     //const projectionMatrix = mat4.perspective(1.04719755, 1, 0.03, 10000);
     //const projectionMatrix = mat4.perspective(1.04719755, window.innerWidth/window.innerHeight, 0.03, 10000);
 
-    console.log(projectionMatrix);
 
     const R = mat3.create(...rawCamera.rotation.flat());
     const T = rawCamera.position;
@@ -313,7 +314,7 @@ export class CameraFileParser {
         this.canvas = canvas;
         this.cameraSetCallback = cameraSetCallback;
 
-        this.fileInput.addEventListener('change', this.handleFileInputChange);
+        this.fileInput.addEventListener('change', this.handleFileInputChange);       
     }
 
     private handleFileInputChange = (event: Event) => {
@@ -326,6 +327,18 @@ export class CameraFileParser {
         }
     };
 
+    public handleJsonData(json : Array<String>){
+        //const jsonData = JSON.parse(json);
+        json.forEach((cameraJSON: any) => {
+            this.currentLineId++;
+            const listItem = document.createElement('li');
+            const camera = cameraFromJSON(cameraJSON, this.canvas.width, this.canvas.height);
+            listItem.textContent = cameraJSON.img_name;
+            listItem.addEventListener('click', this.createCallbackForLine(camera));
+            this.listElement.appendChild(listItem);
+        });
+    }
+
     private handleFileLoad = (event: ProgressEvent<FileReader>) => {
         if (!event.target) return;
 
@@ -334,7 +347,8 @@ export class CameraFileParser {
 
         this.currentLineId = 0;
         this.listElement.innerHTML = '';
-
+        this.handleJsonData(jsonData);
+        /*
         jsonData.forEach((cameraJSON: any) => {
             this.currentLineId++;
             const listItem = document.createElement('li');
@@ -343,6 +357,7 @@ export class CameraFileParser {
             listItem.addEventListener('click', this.createCallbackForLine(camera));
             this.listElement.appendChild(listItem);
         });
+        */
     };
 
     private createCallbackForLine = (camera: Camera) => {

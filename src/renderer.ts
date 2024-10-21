@@ -413,6 +413,13 @@ export class Renderer {
         this.context.destroy();
         this.destroyCallback();
     }
+    public resize(){
+        this.simple_render= new SimpleRender(this.context ,this.canvas , 
+            this.pointDataBuffer,
+            this.uniformBuffer,
+            this.sort_key_buffer); //dummy 
+        this.post_renderer = new PostProcessRenderer(this.context,this.canvas , this.simple_render.framebuffer);
+    }
 
     draw(nextFrameCallback: FrameRequestCallback): void {                
         const init_encoder = this.context.device.createCommandEncoder();

@@ -18,6 +18,7 @@ const plyFileInput = document.getElementById('plyButton') as HTMLInputElement;
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
+
 // create the camera and renderer globals
 let interactiveCamera = InteractiveCamera.default(canvas);
 var currentRenderer: Renderer;
@@ -52,7 +53,20 @@ function handlePlyChange(event: any) {
 
 // loads the default ply file (bundled with the source) at startup, useful for dev
 async function loadDefaultPly() {
-    const url = "ply.ply";
+    // Parse url
+    console.log(window.location.href);
+    const urlObj = new URL(window.location.href);
+    const params = new URLSearchParams(urlObj.search);
+    var url = "ply.ply";
+    if(params.has("model")){
+        const model_name = params.get('model');
+        url = model_name+".ply";
+    }
+
+    
+    
+    // Get specific parameter values
+    //const url = "ply.ply";
     //const url = "ply3.ply";
     //const url = "m3splat.ply";
     loadingPopup.style.display = 'block'; // show loading popup
@@ -66,16 +80,39 @@ async function loadDefaultPly() {
    
 }
 
+
 // DEV: uncomment this line to load the default ply file at startup
 loadDefaultPly();
 
 // add event listeners
 plyFileInput!.addEventListener('change', handlePlyChange);
-new CameraFileParser(
+const camParser = new CameraFileParser(
     cameraFileInput,
     cameraList,
     canvas,
     (camera) => interactiveCamera.setNewCamera(camera),
 );
 
-console.log(interactiveCamera);
+
+async function loadDefaultCamera(){
+    const url = "cam.json";
+    const content = await fetch(url);
+    if (content.ok) {
+        const data = await content.json();
+        console.log(data);
+        camParser.handleJsonData(data);
+    }
+    
+}
+loadDefaultCamera();
+
+// Resize callback
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    currentRenderer.resize();
+}
+
+window.addEventListener('resize', resizeCanvas);
+
+
