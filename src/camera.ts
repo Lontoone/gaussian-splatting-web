@@ -1,4 +1,7 @@
-import { mat4, vec3, mat3, Mat4, Mat3, Vec3 } from 'wgpu-matrix';
+import { mat4, vec3, mat3, Mat4, Mat3, Vec3, vec4 } from 'wgpu-matrix';
+
+
+const FOV = 1.04719755; // 60 degree
 
 // camera as loaded from JSON
 interface CameraRaw {
@@ -58,6 +61,13 @@ export class Camera {
     focalY: number;
     scaleModifier: number;
 
+    m_up:number = 1.0;
+    center : Vec3 = [0,0,0];
+    
+    radius = 3.0;
+    _eye : Vec3 = [0,-5,3];
+   
+
     constructor(
         height: number,
         width: number,
@@ -75,6 +85,12 @@ export class Camera {
         this.focalX = focalX;
         this.focalY = focalY;
         this.scaleModifier = scaleModifier;
+        /*
+        this.camera3 = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.renderer = new THREE.WebGLRenderer();
+        document.body.appendChild(this.renderer.domElement);
+        this.controls = new TrackballControls(this.camera3, this.renderer.domElement);
+        */
 
     }
 
@@ -82,14 +98,17 @@ export class Camera {
         return new Camera(
             window.innerHeight,
             window.innerWidth,
-            mat4.lookAt([0, 0 , -2], [0, 0, 0], [0, 1, 0]),            
-            mat4.perspective(1.04719755, 1, 0.03, 1000),
-            600,
-            600,
+            mat4.lookAt([0, 0 , -5], [0, 0, 0], [0, 1, 0]),            
+            mat4.perspective(FOV, innerWidth/innerHeight, 0.03, 1000),
+            window.innerWidth,
+            window.innerHeight,
             1,
         )
     }
-
+    update(){       
+        this.viewMatrix = mat4.lookAt( this._eye, this.center , [0,1,0]);
+        console.log(this.viewMatrix);
+    }
     // computes the depth of a point in camera space, for sorting
     dotZ(): (v: Vec3) => number {
         const depthAxis = this.depthAxis();
@@ -111,19 +130,86 @@ export class Camera {
     }
 
     // for camera interactions
-    translate(x: number, y: number, z: number) {
-        const viewInv = mat4.inverse(this.viewMatrix);
-        mat4.translate(viewInv, [x, y, z], viewInv);
-        mat4.inverse(viewInv, this.viewMatrix);
+    translate(x: number, y: number, z: number) {      
+        x   *=-1;
+        y   *=-1;
+        const world_up = vec3.create(0,1,0);
+
+        let fz = vec3.subtract(this._eye , this.center);
+        let len = vec3.length(fz)/0.785; //45 degrees
+        fz = vec3.normalize(fz);
+        let fx = vec3.cross(world_up , fz);
+        let fy = vec3.cross(fz , fx);
+        fx = vec3.normalize(fx);
+        fy = vec3.normalize(fy);
+
+        let panVector = vec3.scale( vec3.add( vec3.scale(fx , -x) ,vec3.scale(fy , y))  , len);
+        vec3.add( panVector , this._eye , this._eye);
+        vec3.add( panVector , this.center , this.center);
+
+    }    
+    zoom(distance: number){
+        
+        this.radius = this.radius + distance * 0.001;
+        this.radius = Math.max(this.radius , 0.2);          
+        
+        let origin = this.center;
+        let postion = this._eye;
+        let centerToEye = vec3.subtract(postion, origin);
+        centerToEye = vec3.normalize(centerToEye);
+        vec3.scale(centerToEye , this.radius , centerToEye);
+
+        // Finding the new position
+        let newPosition = vec3.create();
+        vec3.add(centerToEye , origin , newPosition);
+
+        this._eye = newPosition;
     }
 
     // for camera interactions
     rotate(x: number, y: number, z: number) {
-        const viewInv = mat4.inverse(this.viewMatrix);
-        mat4.rotateX(viewInv, y, viewInv);
-        mat4.rotateY(viewInv, x, viewInv);
-        mat4.rotateZ(viewInv, z, viewInv);
-        mat4.inverse(viewInv, this.viewMatrix);
+        
+        if(x == 0 && y == 0)
+            return;
+
+        const two_pi = Math.PI * 2;
+        x*=two_pi;
+        y*=two_pi;
+
+        let origin = this.center;
+        let postion = this._eye;
+
+        let centerToEye = vec3.subtract(postion, origin);
+        //let radius = vec3.length(centerToEye);
+        let radius = this.radius;
+        centerToEye = vec3.normalize(centerToEye);
+        let axe_z = centerToEye;
+
+        // Find the rotation around the UP axis (Y)
+        const world_up = vec3.create(0,1,0);
+        let rot_y = mat4.rotate(mat4.identity() , world_up , -x );
+        // Apply the (Y) rotation to the eye-center vector
+        centerToEye = mat4.multiply( rot_y , vec4.create(centerToEye[0] , centerToEye[1],centerToEye[2] , 0));
+
+        // Find the rotation around the X vector: cross between eye-center and up (X)
+        let axe_x = vec3.normalize( vec3.cross(world_up , axe_z));
+        let rot_x = mat4.rotate(mat4.identity() , axe_x ,-y);
+
+        // Apply the (X) rotation to the eye-center vector
+        let vect_rot = mat4.mul(rot_x , vec4.create(centerToEye[0],centerToEye[1],centerToEye[2],0  ));
+
+        if(Math.sign(vect_rot[0] ) == Math.sign(centerToEye[0])){
+            centerToEye = vect_rot;
+        }
+        // Make the vector as long as it was originally
+        vec3.scale(centerToEye , radius , centerToEye);
+
+        // Finding the new position
+        let newPosition = vec3.create();
+        vec3.add(centerToEye , origin , newPosition);
+
+        this._eye = newPosition;   
+
     }
 
     // the depth axis is the third column of the transposed view matrix
@@ -134,9 +220,13 @@ export class Camera {
 
 // Adds interactivity to a camera. The camera is modified by the user's mouse and keyboard input.
 export class InteractiveCamera {
+    resize() {
+        this.camera.perspective = mat4.perspective(FOV, innerWidth/innerHeight, 0.03, 1000);
+    }
     private camera: Camera;
     private canvas: HTMLCanvasElement;
 
+    private mode = 0;
     private drag: boolean = false;
     private oldX: number = 0;
     private oldY: number = 0;
@@ -161,26 +251,115 @@ export class InteractiveCamera {
     }
 
     private createCallbacks() {
-        this.canvas.addEventListener('mousedown', (e) => {
+        document.addEventListener('contextmenu', (event) => {
+            event.preventDefault();
+        });
+
+        //===============================
+        //      Finger
+        //===============================
+        document.addEventListener('touchstart', (event) => {
+            if(event.touches.length ==1){
+                this.mode = 2; // Rotate
+            }
+            if(event.touches.length == 2){
+                this.mode = 0; // pan
+            }
             this.drag = true;
-            this.oldX = e.pageX;
-            this.oldY = e.pageY;
-            this.setDirty();
-            e.preventDefault();
-        }, false);
+            this.oldX = event.touches[0].clientX;
+            this.oldY = event.touches[0].clientY;
+            this.setDirty();                
+            event.preventDefault();
 
-        this.canvas.addEventListener('mouseup', (e) => {
-            this.drag = false;
-        }, false);
-
-        this.canvas.addEventListener('mousemove', (e) => {
+        });
+        
+        document.addEventListener('touchmove', (event) => {
             if (!this.drag) return false;
-            this.dRX = (e.pageX - this.oldX) * 2 * Math.PI / this.canvas.width;
-            this.dRY = -(e.pageY - this.oldY) * 2 * Math.PI / this.canvas.height;
-            this.oldX = e.pageX;
-            this.oldY = e.pageY;
+            if(this.mode==2){                
+                this.dRX = (event.touches[0].clientX - this.oldX) * 2 * Math.PI / this.canvas.width;
+                this.dRY = -(event.touches[0].clientY - this.oldY) * 2 * Math.PI / this.canvas.height;
+                
+                this.oldX = event.touches[0].clientX;
+                this.oldY = event.touches[0].clientY;
+                this.setDirty();
+                event.preventDefault();
+            }
+
+            else if(this.mode==0){
+                console.log("Mouse btn 0");
+                this.dTX = (event.touches[0].clientX - this.oldX) * 2  / this.canvas.width;
+                this.dTY = -(event.touches[0].clientY - this.oldY) * 2 / this.canvas.height;
+                
+                this.oldX = event.touches[0].clientX;
+                this.oldY = event.touches[0].clientY;
+                this.setDirty();
+                event.preventDefault();
+
+            }
+        });
+        
+        document.addEventListener('touchend', (event) => {
+            console.log('Touch end detected');
+            this.drag = false;            
+            this.mode = -1;
+        });
+
+        //===============================
+        //      Kyeboard Input
+        //===============================
+        this.canvas.addEventListener('mousedown', (e) => {
+            this.mode = e.button;
+            
+            // Right button for moving look center
+            if (e.button == 2) {                
+                this.drag = true;
+                this.oldX = e.pageX;
+                this.oldY = e.pageY;
+                this.setDirty();                
+                e.preventDefault();
+            }
+            // Left button for rotating view
+            if(e.button ==0){
+                this.drag = true;
+                this.oldX = e.pageX;
+                this.oldY = e.pageY;
+                this.setDirty();                
+            }
+        }, false);
+        document.addEventListener('wheel', (event) => {
+            this.camera.zoom(event.deltaY);
+            
             this.setDirty();
-            e.preventDefault();
+        });
+
+        this.canvas.addEventListener('mouseup', (e) => {            
+            this.drag = false;            
+            this.mode = -1;
+        }, false);
+
+        this.canvas.addEventListener('mousemove', (e) => {            
+            if (!this.drag) return false;
+            if(this.mode==2){                
+                this.dRX = (e.pageX - this.oldX) * 2 * Math.PI / this.canvas.width;
+                this.dRY = -(e.pageY - this.oldY) * 2 * Math.PI / this.canvas.height;
+                
+                this.oldX = e.pageX;
+                this.oldY = e.pageY;
+                this.setDirty();
+                e.preventDefault();
+            }
+
+            else if(this.mode==0){
+                console.log("Mouse btn 0");
+                this.dTX = (e.pageX - this.oldX) * 2  / this.canvas.width;
+                this.dTY = -(e.pageY - this.oldY) * 2 / this.canvas.height;
+                
+                this.oldX = e.pageX;
+                this.oldY = e.pageY;
+                this.setDirty();
+                e.preventDefault();
+
+            }
         }, false);
 
         this.canvas.addEventListener('wheel', (e) => {
@@ -191,11 +370,10 @@ export class InteractiveCamera {
 
         window.addEventListener('keydown', (e) => {
             const keyMap: {[key: string]: () => void} = {
-                // translation
-                'w': () => { this.dTY -= 0.1 },
-                's': () => { this.dTY += 0.1 },
-                'a': () => { this.dTX -= 0.1 },
-                'd': () => { this.dTX += 0.1 },
+                // translation                
+                //'a': () => { this.dTX -= 0.1 },
+                //'d': () => { this.dTX += 0.1 },
+                
                 'q': () => { this.dTZ += 0.1 },
                 'e': () => { this.dTZ -= 0.1 },
 
@@ -219,9 +397,8 @@ export class InteractiveCamera {
         }, false);
     }
 
-    public setNewCamera(newCamera: Camera) {
-        console.log("set camera" + newCamera);
-        this.camera = newCamera;
+    public setNewCamera(newCamera: Camera) {        
+        this.camera = newCamera;        
         this.setDirty();
     }
 
@@ -239,13 +416,21 @@ export class InteractiveCamera {
 
     public getCamera(): Camera {
         if (this.isDirty()) {
-            this.camera.translate(this.dTX, this.dTY, this.dTZ);
             this.camera.rotate(this.dRX, this.dRY, this.dRZ);
+            this.camera.translate(this.dTX, this.dTY, this.dTZ);
             this.dTX = this.dTY = this.dTZ = this.dRX = this.dRY = this.dRZ = 0;
+            /*
+            */
+            
+            this.camera.update();
             this.setClean();
+            
         }
 
         return this.camera;
+    }
+    public setCenter(v:Vec3){
+        this.camera.center = v;
     }
 }
 
@@ -302,6 +487,7 @@ export class CameraFileParser {
     private currentLineId: number = 0;
     private canvas: HTMLCanvasElement;
     private cameraSetCallback: (camera: Camera) => void;
+    public cameraList : Camera[] = [];
 
     constructor(
         fileInput: HTMLInputElement,
@@ -333,6 +519,7 @@ export class CameraFileParser {
             this.currentLineId++;
             const listItem = document.createElement('li');
             const camera = cameraFromJSON(cameraJSON, this.canvas.width, this.canvas.height);
+            this.cameraList.push(camera);
             listItem.textContent = cameraJSON.img_name;
             listItem.addEventListener('click', this.createCallbackForLine(camera));
             this.listElement.appendChild(listItem);

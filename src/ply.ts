@@ -1,5 +1,5 @@
 
-import { dot, dotF, saturate } from "./mylib";
+import { dot, dotF, saturate,compare_raw_vertex } from "./mylib";
 import { PackingType, StaticArray, Struct, vec3, vec4, f32 } from "./packing";
 import { Vec3 , Vec4  } from "wgpu-matrix";
 
@@ -48,6 +48,8 @@ export class PackedGaussians {
 
     gaussiansBuffer: ArrayBuffer;
     positionsBuffer: ArrayBuffer;
+    min_pos : Vec3 = [99999,99999,99999];
+    max_pos : Vec3 = [-99999,-99999,-99999];
 
     private static decodeHeader(plyArrayBuffer: ArrayBuffer): [number, Record<string, string>, DataView] {
         /* decodes the .ply file header and returns a tuple of:
@@ -261,6 +263,17 @@ export class PackedGaussians {
         for (let i = 0; i < vertexCount; i++) {
             const [newReadOffset, rawVertex] = this.readRawVertex(readOffset, vertexData, propertyTypes);
             readOffset = newReadOffset;
+            // Get bbox range of the splats            
+            if( compare_raw_vertex(rawVertex.x,rawVertex.y,rawVertex.z,this.max_pos) ){                
+                this.max_pos[0] = rawVertex.x;
+                this.max_pos[1] = rawVertex.y;
+                this.max_pos[2] = rawVertex.z;
+            }
+            if( !compare_raw_vertex(rawVertex.x,rawVertex.y,rawVertex.z,this.min_pos) ){
+                this.min_pos[0] = rawVertex.x;
+                this.min_pos[1] = rawVertex.y;
+                this.min_pos[2] = rawVertex.z;
+            }
 
             //console.log("origin" + rawVertex.rot_0 +" " + rawVertex.rot_1 + " " + rawVertex.rot_2 + " "+rawVertex.rot_3);
 
@@ -290,7 +303,7 @@ export class PackedGaussians {
             d = Math.sqrt(1.0 -  saturate( d ));             
             
             var result_rot = new Float32Array([a,b,c,d]);
-            if(idx ==0) { result_rot  =  new Float32Array([d , a , b , c]);}
+            if(idx ==0) { result_rot  = new Float32Array([d , a , b , c]);}
             if(idx ==1) { result_rot  = new Float32Array([a , d , b , c])}
             if(idx ==2) { result_rot  = new Float32Array([a , b , d , c])}
                                  

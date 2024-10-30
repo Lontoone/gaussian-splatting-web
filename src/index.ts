@@ -1,6 +1,7 @@
 import { loadFileAsArrayBuffer, PackedGaussians } from './ply';
 import { CameraFileParser, InteractiveCamera } from './camera';
 import { Renderer } from './renderer';
+import { vec3 } from 'wgpu-matrix';
 
 if (!navigator.gpu) {
     alert("WebGPU not supported on this browser! (navigator.gpu is null)");
@@ -22,6 +23,7 @@ canvas.height = window.innerHeight;
 // create the camera and renderer globals
 let interactiveCamera = InteractiveCamera.default(canvas);
 var currentRenderer: Renderer;
+var gaussians: PackedGaussians;
 
 // swap the renderer when the ply file changes
 function handlePlyChange(event: any) {
@@ -31,7 +33,7 @@ function handlePlyChange(event: any) {
         if (currentRenderer) {
             await currentRenderer.destroy();
         }
-        const gaussians = new PackedGaussians(arrayBuffer);
+        gaussians = new PackedGaussians(arrayBuffer);
         try {
             const context = await Renderer.requestContext(gaussians);
             const renderer = new Renderer(canvas, interactiveCamera, gaussians, context, fpsCounter);
@@ -63,16 +65,12 @@ async function loadDefaultPly() {
         url = model_name+".ply";
     }
 
-    
-    
     // Get specific parameter values
     //const url = "ply.ply";
-    //const url = "ply3.ply";
-    //const url = "m3splat.ply";
     loadingPopup.style.display = 'block'; // show loading popup
     const content = await fetch(url);
     const arrayBuffer = await content.arrayBuffer();
-    const gaussians = new PackedGaussians(arrayBuffer);
+    gaussians = new PackedGaussians(arrayBuffer);
     const context = await Renderer.requestContext(gaussians);
     const renderer = new Renderer(canvas, interactiveCamera, gaussians, context, fpsCounter);
     currentRenderer = renderer; // bind to the global scope
@@ -82,7 +80,11 @@ async function loadDefaultPly() {
 
 
 // DEV: uncomment this line to load the default ply file at startup
-loadDefaultPly();
+loadDefaultPly().then(()=>{
+    let center = vec3.scale( vec3.add( gaussians.min_pos , gaussians.max_pos) , 0.5);
+    interactiveCamera.setCenter(center);
+    
+});
 
 // add event listeners
 plyFileInput!.addEventListener('change', handlePlyChange);
@@ -94,6 +96,7 @@ const camParser = new CameraFileParser(
 );
 
 
+
 async function loadDefaultCamera(){
     const url = "cam.json";
     const content = await fetch(url);
@@ -101,8 +104,10 @@ async function loadDefaultCamera(){
         const data = await content.json();
         console.log(data);
         camParser.handleJsonData(data);
-    }
-    
+        //interactiveCamera.setNewCamera(camParser.cameraList[0]);
+        console.log("current camera " + interactiveCamera.getCamera().viewMatrix);
+        console.log("Json camera " + camParser.cameraList[0].viewMatrix);
+    } 
 }
 loadDefaultCamera();
 
@@ -110,6 +115,7 @@ loadDefaultCamera();
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
+    interactiveCamera.resize();
     currentRenderer.resize();
 }
 

@@ -1,4 +1,4 @@
-import { Vec4 } from "wgpu-matrix";
+import { Vec4 ,Vec3, vec3} from "wgpu-matrix";
 
 export function dot(a : Vec4 , b:Vec4) : number{
 	return a[0] * b[0] + 
@@ -17,4 +17,14 @@ export function dotF(a: Float32Array , b :Float32Array){
 
 export function saturate(value: number): number {
     return Math.min(Math.max(value, 0), 1);
+}
+
+
+export function getlength(v:Vec3):number{
+	return vec3.length(v);
+	
+}
+
+export function compare_raw_vertex( x:number , y :number , z:number, v:Vec3):boolean{	
+	return x+y+z > v[0]+v[1]+v[2];
 }

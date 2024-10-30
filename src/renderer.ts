@@ -11,10 +11,11 @@
 import { PackedGaussians } from './ply';
 import { f32, Struct, vec3, mat4x4 } from './packing';
 import { InteractiveCamera } from './camera';
-import { getShaderCode , getInitSortBufferCode } from './shaders';
+//import { getShaderCode , getInitSortBufferCode } from './shaders';
+import { getInitSortBufferCode } from './shaders';
 import { mat4, Mat4, Vec3 } from 'wgpu-matrix';
 import { GpuContext } from './gpu_context';
-import { DepthSorter } from './depth_sorter';
+//import { DepthSorter } from './depth_sorter';
 import { RadixSortKernel } from 'webgpu-radix-sort';
 import { SimpleRender } from './simple_render';
 import { PostProcessRenderer } from './post_process_render';
@@ -54,9 +55,8 @@ export class Renderer {
     // Sort
     sort_key_buffer : GPUBuffer;
     sort_value_buffer : GPUBuffer;
-    
     radixSortKernel ;
-    //depthSorter: DepthSorter;
+    
 
     initSortBindGroup: GPUBindGroup;
     uniformsBindGroup: GPUBindGroup;
@@ -151,94 +151,8 @@ export class Renderer {
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
             label: "renderer.uniformBuffer",
         });
+        
 
-        const shaderCode = getShaderCode(
-            canvas, 
-            gaussians.sphericalHarmonicsDegree,
-            gaussians.nShCoeffs,            
-            this.canvas.width,
-            this.canvas.height ,
-        );
-
-        console.log(this.interactiveCamera.getCamera());
-        const shaderModule = this.context.device.createShaderModule({ code: shaderCode });
-
-        //===========================================
-        //              Pipeline
-        //===========================================
-        const draw_uniform_bindinglayout = this.context.device.createBindGroupLayout({
-            entries: [
-                {
-                    binding: 0,
-                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-                    buffer: {
-                        type: 'uniform',
-                    },
-                },              
-            ],
-        });       
-        const draw_data_bindinglayout = this.context.device.createBindGroupLayout({
-            label:"draw_data_bindinglayout",
-            entries: [
-                {
-                    binding: 1,
-                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-                    buffer: {
-                        type: 'read-only-storage',
-                    },
-                },              
-                {
-                    binding: 2,                    
-                    visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-                    buffer: {
-                        type: 'read-only-storage',
-                    },
-                },              
-            ],
-        });      
-        const draw_pipeline_layout= this.context.device.createPipelineLayout({
-            label: "draw_pipeline_layout ",
-            bindGroupLayouts : [draw_uniform_bindinglayout,draw_data_bindinglayout],
-        });
-        this.drawPipeline = this.context.device.createRenderPipeline({
-            //layout: "auto",            
-            layout : draw_pipeline_layout,
-            vertex: {
-                module: shaderModule,
-                entryPoint: "vs_points",
-            },
-            fragment: {
-                module: shaderModule,
-                entryPoint: "fs_main",
-                targets: [
-                    {
-                        format: presentationFormat,
-                        // with one-minus-dst alpha we can set the src to src.alpha * src.color and
-                        // we get that color_new = src.color * src.alpha + dst.color * (1 - src.alpha)
-                        // which is the same as the accumulation rule in the paper
-                        blend: {
-                            color: {
-                                srcFactor: "one-minus-dst-alpha" as GPUBlendFactor,
-                                dstFactor: "one" as GPUBlendFactor,
-                                operation: "add" as GPUBlendOperation,
-                            },
-                            alpha: {
-                                srcFactor: "one-minus-dst-alpha" as GPUBlendFactor,
-                                dstFactor: "one" as GPUBlendFactor,
-                                operation: "add" as GPUBlendOperation,
-                            },
-                        }
-                    },
-                ],
-            },
-            primitive: {
-                topology: "triangle-list",
-                //topology: "point-list",
-                //topology: "line-list",
-                stripIndexFormat: undefined,
-                cullMode: undefined,
-            },
-        });
         //===========================================
         //              Binding group
         //===========================================
@@ -254,43 +168,6 @@ export class Renderer {
 			mappedAtCreation: false,
 		});
 
-        // Drawing pass
-        this.uniformsBindGroup = this.context.device.createBindGroup({
-            //layout: this.drawPipeline.getBindGroupLayout(0),
-            layout: draw_uniform_bindinglayout,
-            entries: [{
-                binding: 0,
-                resource: {
-                    buffer: this.uniformBuffer,
-                },
-            }],
-        });
-
-        this.pointDataBindGroup = this.context.device.createBindGroup({
-            //layout: this.drawPipeline.getBindGroupLayout(1),
-            layout : draw_data_bindinglayout,
-            entries: [{
-                binding: 1,
-                resource: {
-                    buffer: this.pointDataBuffer,
-                },
-            },{
-                binding: 2,
-                resource: {
-                    buffer: this.sort_key_buffer,
-                },
-            }],
-        });
-
-        /*
-        this.depthSorter = new DepthSorter(this.context, gaussians);
-        this.drawIndexBuffer = this.context.device.createBuffer({
-           size: 6 * 4 * gaussians.numGaussians,
-           usage: GPUBufferUsage.INDEX | GPUBufferUsage.COPY_DST,
-           mappedAtCreation: false,
-           label: "renderer.drawIndexBuffer",
-        });
-        */
         //===========================================
         //             Radix Sorter
         //===========================================
@@ -304,7 +181,7 @@ export class Renderer {
             bit_count: 32,                    // Number of bits per element. Must be a multiple of 4 (default: 32)
             workgroup_size: { x: 16, y: 16 }, // Workgroup size in x and y dimensions. (x * y) must be a power of two
         })
-        console.log(this.radixSortKernel);
+        
         // Init rasix sort pipeline
         const sort_shaderModule =  this.context.device.createShaderModule({
             code: getInitSortBufferCode(this.numGaussians , gaussians.nShCoeffs),
@@ -438,68 +315,8 @@ export class Renderer {
         this.context.device.queue.submit([commandEncoder.finish()])
         
 
-        //==========
-        //     Test        
-        //==========
-        
-
-        /*
-        const _data_size = 4;
-		const _buffer_size = this.numGaussians * _data_size;
-		//const buffer = this.simple_render.vertexBuffer;       
-		const buffer = this.sort_key_buffer;       
-
-		const readBuffer = this.context.device.createBuffer({			
-			size: _buffer_size,
-			usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST,
-			mappedAtCreation: false,
-			label: "read back buffer"
-		});
-		const _cmdPass = this.context.device.createCommandEncoder();
-        
-		_cmdPass.copyBufferToBuffer(buffer, 0, readBuffer, 0, _buffer_size);
-		this.context.device.queue.submit([ _cmdPass.finish()]);
-				
-		readBuffer.mapAsync(GPUMapMode.READ).then(() => {
-			const result = new Uint32Array(readBuffer.getMappedRange());
-			
-			console.log(result);
-			readBuffer.unmap();
-		});
-
-        */
-
        this.simple_render.draw(this.numGaussians);
        this.post_renderer.draw();
-       /*   
-      
-       const RenderEncoder = this.context.device.createCommandEncoder();  
-       
-       const textureView = this.contextGpu.getCurrentTexture().createView();
-       const renderPassDescriptor: GPURenderPassDescriptor = {
-            colorAttachments: [{
-                view: textureView,
-                clearValue: { r: 0, g: 0, b: 0, a: 0 },
-                storeOp: "store" as GPUStoreOp,
-                loadOp: "clear" as GPULoadOp,
-            }],
-                };
-                
-                const passEncoder = RenderEncoder.beginRenderPass(renderPassDescriptor);
-                passEncoder.setPipeline(this.drawPipeline);
-                
-                passEncoder.setBindGroup(0, this.uniformsBindGroup);
-                passEncoder.setBindGroup(1, this.pointDataBindGroup);
-                
-                passEncoder.setIndexBuffer(this.drawIndexBuffer, "uint32" as GPUIndexFormat)        
-                //passEncoder.drawIndexed(this.numGaussians * 6, 1, 0, 0, 0);
-                passEncoder.drawIndexed( 6, this.numGaussians);
-                
-                passEncoder.end();
-                this.context.device.queue.submit([RenderEncoder.finish()]);
-                
-        */
-        
           
         // fps counter
         const now = performance.now();
@@ -527,51 +344,13 @@ export class Renderer {
         const tanHalfFovY = 0.5 * this.canvas.height / camera.focalY;
 
         this.depthSortMatrix = mat4toArrayOfArrays(camera.viewMatrix);
-        console.log(camera);
+        
         let uniformsMatrixBuffer = new ArrayBuffer(this.uniformBuffer.size);
 
         let viewMat = mat4toArrayOfArrays((camera.viewMatrix))
         let projMat = mat4toArrayOfArrays((camera.perspective))
-        console.log(camera.perspective)
-         /*
-        viewMat= [
-            [-0.77, 0.05, -0.62, 0],
-            [0.08459874242544174, 0.9963161945343018, -0.014019007794559002, 0],
-            [0.625243604183197, -0.06403473764657974, -0.7777983546257019, 0],
-            [-0.6592757105827332, -0.3823312222957611, 0.2661628723144531, 1],
-        ]     
-        // Hand-cord coordinate:
-
-        viewMat= [
-                [0.9940837025642395, -0.012986889109015465, 0.10784024745225906, 0],
-                [0.10758581012487411, 0.25437676906585693, -0.9611029624938965, 0],
-                [-0.014950355514883995, 0.9670181274414062, 0.25426870584487915, 0],
-                [-0.022199857980012894, -1.4709339141845703, -1.2800326347351074, 1],
-            ]
-           
-        viewMat= [
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, -1, 0],
-            [0, 0, -20,1],
-        ]   
-       
-        viewMat= [
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, -1, 0],
-            [-0.2712317, 1.554028, 2.063166, 1],
-        ]   
-        projMat = 
-        [
-            [1.73205, 0, 0, 0],
-            [0, -1.73205, 0, 0],
-            [0, 0, 0.00030, -1],
-            [0, 0, 0.30009, 0],
-        ]  
-        */
-        //console.log( viewMat);        
-        //console.log( projMat);
+        
+        
         let uniforms = {
             viewMatrix: viewMat,            
             projMatrix: projMat,
