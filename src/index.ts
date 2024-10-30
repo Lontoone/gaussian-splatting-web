@@ -104,7 +104,7 @@ async function loadDefaultCamera(){
         const data = await content.json();
         console.log(data);
         camParser.handleJsonData(data);
-        //interactiveCamera.setNewCamera(camParser.cameraList[0]);
+        interactiveCamera.setNewCamera(camParser.cameraList[0]);
         console.log("current camera " + interactiveCamera.getCamera().viewMatrix);
         console.log("Json camera " + camParser.cameraList[0].viewMatrix);
     } 

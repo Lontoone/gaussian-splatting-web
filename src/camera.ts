@@ -399,7 +399,7 @@ export class InteractiveCamera {
 
     public setNewCamera(newCamera: Camera) {        
         this.camera = newCamera;        
-        this.setDirty();
+        this.setClean();
     }
 
     private setDirty() {
@@ -420,8 +420,8 @@ export class InteractiveCamera {
             this.camera.translate(this.dTX, this.dTY, this.dTZ);
             this.dTX = this.dTY = this.dTZ = this.dRX = this.dRY = this.dRZ = 0;
             /*
-            */
             
+            */
             this.camera.update();
             this.setClean();
             
@@ -463,8 +463,7 @@ function cameraFromJSON(rawCamera: CameraRaw, canvasW: number, canvasH: number):
     const R = mat3.create(...rawCamera.rotation.flat());
     const T = rawCamera.position;
 
-    const viewMatrix = worldToCamFromRT(R, T);    
-    //const viewMatrix =  mat4.lookAt([0, 0 , -20], [0, 0, 0], [0, 1, 0]);
+    const viewMatrix = worldToCamFromRT(R, T);        
     return new Camera(
         canvasH,
         canvasW,
@@ -472,11 +471,9 @@ function cameraFromJSON(rawCamera: CameraRaw, canvasW: number, canvasH: number):
         projectionMatrix,
         canvasH,//rawCamera.fx,
         canvasW,//rawCamera.fy,
-        1,
-        //Math.max(canvasW / rawCamera.width, canvasH / rawCamera.height),
+        1,    
     );
-    console.log(canvasH +" " +canvasW,);
-    console.log(rawCamera.fx +" " +rawCamera.fy,);
+    
 }
 
 // A UI component that parses a JSON file containing a list of cameras and displays them as a list,
