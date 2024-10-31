@@ -116,7 +116,7 @@ export class Camera {
         else{
             let lst_dir = vec3.subtract(this._eye , this.previous_eye);
             vec3.normalize(lst_dir,lst_dir);                    
-            console.log(lst_dir);
+            
             this._eye = vec3.add(this._eye , vec3.scale(lst_dir , 0.05));
             this.viewMatrix = mat4.lookAt( this._eye, this.center , [0,1,0]);
             this.inertia-=0.05;
@@ -214,6 +214,7 @@ export class Camera {
         // Apply the (X) rotation to the eye-center vector
         let vect_rot = mat4.mul(rot_x , vec4.create(centerToEye[0],centerToEye[1],centerToEye[2],0  ));
 
+        //Avoid flipping
         if(
             (Math.sign(vect_rot[0] ) == Math.sign(centerToEye[0])) &&
             (Math.abs(vect_rot[1] -centerToEye[1])<0.2) 
@@ -428,7 +429,7 @@ export class InteractiveCamera {
         this.setClean();
     }
 
-    private setDirty() {
+    public setDirty() {
         this.dirty = true;
     }
     

@@ -60,8 +60,11 @@
             list-style-type: none;
             padding: 0;
             margin: 0;
-            overflow-y: auto;
-            max-height: 250px;
+            overflow-y: auto;           
+            
+            /*max-height: 250px;*/
+            max-height: 2px;
+
             visibility: hidden;
         }
 
@@ -70,6 +73,8 @@
             margin-top: 10px;
             text-align: left;
             visibility: hidden;
+
+            max-height: 1px;
         }
 
         /* reduce margins on the instructions list */
@@ -106,7 +111,23 @@
 </head>
 
 <body>
-    <div id="loading-popup">Loading .ply, this may take from seconds to a couple of minutes</div>
+    <div id="loading-popup">
+        Loading .ply, this may take from seconds to a couple of minutes
+        <div id="progress-container">
+            <div id="progress-bar"></div>
+        </div>
+        <style>
+            #progress-container {
+                width: 100%;
+                background-color: #f3f3f3;
+            }
+            #progress-bar {
+                width: 0;
+                height: 30px;
+                background-color: #4caf50;
+            }
+        </style>
+    </div>
 
     <div id="container">
         <div id="drawArea">
@@ -164,7 +185,7 @@
                     <li><strong>U/O</strong> rotate roll</li>
                 </ul>
             </div>
-            <a href="https://github.com/cvlab-epfl/gaussian-splatting-web">Source</a>
+            
         </div>
     </div>
 </body>

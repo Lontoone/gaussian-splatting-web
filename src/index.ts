@@ -52,7 +52,36 @@ function handlePlyChange(event: any) {
             .then(onFileLoad);
     }
 }
+async function fetchWithProgress(url: string) {
+    const response = await fetch(url);
+    const reader = response.body?.getReader();
+    const contentLength = +response.headers.get('Content-Length')!;
 
+    let receivedLength = 0;
+    const chunks = [];
+
+    while (true) {
+        const { done, value } = await reader!.read();
+     
+        if (done) {
+            break;
+        }
+
+        chunks.push(value);
+        receivedLength += value.length;
+
+        const progress = (receivedLength / contentLength) * 100;
+        document.getElementById('progress-bar')!.style.width = `${progress}%`;
+    }
+    const chunksAll = new Uint8Array(receivedLength);
+    
+    let position = 0;
+    for (let chunk of chunks) {
+        chunksAll.set(chunk, position);        
+        position += chunk.length;
+    }        
+    return chunksAll.buffer;
+}
 // loads the default ply file (bundled with the source) at startup, useful for dev
 async function loadDefaultPly() {
     // Parse url
@@ -68,8 +97,11 @@ async function loadDefaultPly() {
     // Get specific parameter values
     //const url = "ply.ply";
     loadingPopup.style.display = 'block'; // show loading popup
-    const content = await fetch(url);
-    const arrayBuffer = await content.arrayBuffer();
+    //const content = await fetch(url);
+    //const content = await fetchWithProgress(url);
+    //const arrayBuffer = await content.arrayBuffer();
+    const arrayBuffer = await fetchWithProgress(url);
+    
     gaussians = new PackedGaussians(arrayBuffer);
     const context = await Renderer.requestContext(gaussians);
     const renderer = new Renderer(canvas, interactiveCamera, gaussians, context, fpsCounter);
@@ -116,6 +148,7 @@ function resizeCanvas() {
     canvas.height = window.innerHeight;
     interactiveCamera.resize();
     currentRenderer.resize();
+    interactiveCamera.setDirty();
 }
 
 window.addEventListener('resize', resizeCanvas);
