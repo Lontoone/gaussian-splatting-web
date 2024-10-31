@@ -66,7 +66,14 @@ export class Camera {
     
     radius = 3.0;
     _eye : Vec3 = [0,-5,3];
-   
+    previous_eye : Vec3 =[0,-5,3];
+    last_dir : Vec3 = vec3.create();
+    inertia :number = 0 ;
+
+    sensity_slider:HTMLInputElement;
+    get_sensity = (): number => {
+        return parseFloat(this.sensity_slider.value)/1000;
+    };
 
     constructor(
         height: number,
@@ -81,16 +88,13 @@ export class Camera {
         this.width = width;
         this.viewMatrix = viewMatrix;
         this.perspective = perspective;
-        //this.perspective = mat4.transpose( perspective);
+
         this.focalX = focalX;
         this.focalY = focalY;
         this.scaleModifier = scaleModifier;
-        /*
-        this.camera3 = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.renderer = new THREE.WebGLRenderer();
-        document.body.appendChild(this.renderer.domElement);
-        this.controls = new TrackballControls(this.camera3, this.renderer.domElement);
-        */
+        this.sensity_slider = document.getElementById('sensity_slider') as HTMLInputElement;
+
+
 
     }
 
@@ -106,8 +110,18 @@ export class Camera {
         )
     }
     update(){       
-        this.viewMatrix = mat4.lookAt( this._eye, this.center , [0,1,0]);
-        console.log(this.viewMatrix);
+        if(this.inertia==0){                        
+            this.viewMatrix = mat4.lookAt( this._eye, this.center , [0,1,0]);
+        }
+        else{
+            let lst_dir = vec3.subtract(this._eye , this.previous_eye);
+            vec3.normalize(lst_dir,lst_dir);                    
+            console.log(lst_dir);
+            this._eye = vec3.add(this._eye , vec3.scale(lst_dir , 0.05));
+            this.viewMatrix = mat4.lookAt( this._eye, this.center , [0,1,0]);
+            this.inertia-=0.05;
+
+        }
     }
     // computes the depth of a point in camera space, for sorting
     dotZ(): (v: Vec3) => number {
@@ -169,12 +183,14 @@ export class Camera {
     // for camera interactions
     rotate(x: number, y: number, z: number) {
         
+
         if(x == 0 && y == 0)
             return;
+        
 
         const two_pi = Math.PI * 2;
-        x*=two_pi;
-        y*=two_pi;
+        x*=two_pi * this.get_sensity();
+        y*=two_pi * this.get_sensity();
 
         let origin = this.center;
         let postion = this._eye;
@@ -198,9 +214,13 @@ export class Camera {
         // Apply the (X) rotation to the eye-center vector
         let vect_rot = mat4.mul(rot_x , vec4.create(centerToEye[0],centerToEye[1],centerToEye[2],0  ));
 
-        if(Math.sign(vect_rot[0] ) == Math.sign(centerToEye[0])){
+        if(
+            (Math.sign(vect_rot[0] ) == Math.sign(centerToEye[0])) &&
+            (Math.abs(vect_rot[1] -centerToEye[1])<0.2) 
+        ){
             centerToEye = vect_rot;
         }
+        
         // Make the vector as long as it was originally
         vec3.scale(centerToEye , radius , centerToEye);
 
@@ -209,7 +229,7 @@ export class Camera {
         vec3.add(centerToEye , origin , newPosition);
 
         this._eye = newPosition;   
-
+        
     }
 
     // the depth axis is the third column of the transposed view matrix
@@ -335,10 +355,16 @@ export class InteractiveCamera {
         this.canvas.addEventListener('mouseup', (e) => {            
             this.drag = false;            
             this.mode = -1;
+
+            this.camera.inertia =  1;                        
+            this.camera.previous_eye = this.camera._eye;            
+            
         }, false);
 
         this.canvas.addEventListener('mousemove', (e) => {            
-            if (!this.drag) return false;
+            if (!this.drag) return false;            
+            this.camera.inertia =  0; 
+
             if(this.mode==2){                
                 this.dRX = (e.pageX - this.oldX) * 2 * Math.PI / this.canvas.width;
                 this.dRY = -(e.pageY - this.oldY) * 2 * Math.PI / this.canvas.height;
@@ -411,17 +437,16 @@ export class InteractiveCamera {
     }
 
     public isDirty(): boolean {
-        return this.dirty;
+        return this.camera.inertia >0 || this.dirty;
     }
 
     public getCamera(): Camera {
-        if (this.isDirty()) {
+        if (this.isDirty()) {                       
+
             this.camera.rotate(this.dRX, this.dRY, this.dRZ);
             this.camera.translate(this.dTX, this.dTY, this.dTZ);
             this.dTX = this.dTY = this.dTZ = this.dRX = this.dRY = this.dRZ = 0;
-            /*
-            
-            */
+
             this.camera.update();
             this.setClean();
             

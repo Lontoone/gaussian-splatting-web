@@ -101,12 +101,11 @@ async function loadDefaultCamera(){
     const url = "cam.json";
     const content = await fetch(url);
     if (content.ok) {
-        const data = await content.json();
-        console.log(data);
+        const data = await content.json();        
         camParser.handleJsonData(data);
-        interactiveCamera.setNewCamera(camParser.cameraList[0]);
-        console.log("current camera " + interactiveCamera.getCamera().viewMatrix);
-        console.log("Json camera " + camParser.cameraList[0].viewMatrix);
+        //interactiveCamera.setNewCamera(camParser.cameraList[0]);
+        //console.log("current camera " + interactiveCamera.getCamera().viewMatrix);
+        //console.log("Json camera " + camParser.cameraList[0].viewMatrix);
     } 
 }
 loadDefaultCamera();

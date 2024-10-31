@@ -49,7 +49,7 @@
             flex-direction: column;
             align-items: center;
             padding: 10px;
-            height: 100%;
+            /*height: 100%;*/
         }
 
         #sidebar input {
@@ -123,11 +123,21 @@
                 <button style="display:block" onclick="document.getElementById('cameraButton').click()">Choose
                     cameras.json</button>
                 <input type="file" accept=".json" style="display:none" id="cameraButton" />
+                
+                <!---靈敏度slider-->
+                <div class="slidecontainer">Rotate Speed
+                    <input type="range" min="1" max="1000" value="100" class="slider" id="sensity_slider">
+                </div>
 
+
+                <!---Camera List Hidden-->
                 <label for="cameraList">Available cameras:</label>
                 <ul id="cameraList">
                     <li>(choose cameras.json to load)</li>
                 </ul>
+
+              
+                
             </div>
 
             <div id="instructions">
