@@ -176,6 +176,7 @@ export class PackedGaussians {
     }
 
     private PackSmallest3Rotation(q : Vec4):Vec4{
+        /*
         var absQ = [Math.abs(q[0])  , Math.abs(q[1]),Math.abs(q[2]) ,Math.abs(q[3])  ];
         var index = 0 ;
         var maxV = absQ[0];
@@ -195,14 +196,22 @@ export class PackedGaussians {
         if(index==0){q= [q[1] , q[2], q[3] , q[0]]};
         if(index==1){q= [q[0] , q[2], q[3] , q[1]]};
         if(index==2){q= [q[0] , q[1], q[3] , q[2]]};        
-        let s = (q[4]>=0? 1: -1);
+        */
+
+        //let s = (q[4]>=0? 1: -1);  // I believe q[4] is a typo, but result seems correct.
+        let s= -1;  // Maybe is because different coordinates
         var q3d :Vec3 = [q[0] *s, q[1] *s, q[2]*s] ;
+        /*
         var three  = q3d;
         three[0] = three[0]*Math.SQRT2 *0.5+0.5;
         three[1] = three[1]*Math.SQRT2 *0.5+0.5;
         three[2] = three[2]*Math.SQRT2 *0.5+0.5;
 
         return [three[0] , three[1] , three[2] , index/3.0];
+        */
+        //return [q3d[0],q3d[1],q3d[2],index/3.0];
+        return [q3d[0],q3d[1],q3d[2], q[3]];
+
     }
     private LinearScale(s:number):number{
         return Math.abs(Math.exp(s));
@@ -292,20 +301,25 @@ export class PackedGaussians {
             // Do not try to simplify this code !!!!
             // For some resone, Vec4 does not work as excepted.
             
-            let idx =  Math.max(Math.round(qq[3] * 3.0));
-            //var pq : Vec4 = [  rawVertex.rot_0 ,   rawVertex.rot_1 ,   rawVertex.rot_2 , 0]
-            //var pq : Vec4 = [  qq[0] ,   qq[1] ,  qq[3] , 0];
+            /*
+            let idx =  Math.max(Math.round(qq[3] * 3.0));           
             var a = qq[0] * Math.sqrt(2.0) - (1.0 / Math.sqrt(2.0));
             var b = qq[1] * Math.sqrt(2.0) - (1.0 / Math.sqrt(2.0));
             var c = qq[2] * Math.sqrt(2.0) - (1.0 / Math.sqrt(2.0));
-            var d = dotF( new Float32Array([a,b,c]) , new Float32Array([a,b,c])) ;
             
-            d = Math.sqrt(1.0 -  saturate( d ));             
+            var a = qq[0]
+            var b = qq[1]
+            var c = qq[2]            
+            var d = qq[3] 
+            */
+            //var d = dotF( new Float32Array([a,b,c]) , new Float32Array([a,b,c])) ;            
+            //d = Math.sqrt(1.0 -  saturate( d ));             
             
-            var result_rot = new Float32Array([a,b,c,d]);
-            if(idx ==0) { result_rot  = new Float32Array([d , a , b , c]);}
-            if(idx ==1) { result_rot  = new Float32Array([a , d , b , c])}
-            if(idx ==2) { result_rot  = new Float32Array([a , b , d , c])}
+            //var result_rot = new Float32Array([a,b,c,d]);            
+            var result_rot = new Float32Array([qq[0],qq[1],qq[2],qq[3]]);            
+            //if(idx ==0) { result_rot  = new Float32Array([d , a , b , c]);}
+            //if(idx ==1) { result_rot  = new Float32Array([a , d , b , c])}
+            //if(idx ==2) { result_rot  = new Float32Array([a , b , d , c])}
                                  
             rawVertex.rot_0 = result_rot[0];
             rawVertex.rot_1 = result_rot[1];

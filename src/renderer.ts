@@ -318,16 +318,26 @@ export class Renderer {
        this.simple_render.draw(this.numGaussians);
        this.post_renderer.draw();
           
+       /*
         // fps counter
         const now = performance.now();
         const fps = 1000 / (now - this.lastDraw);
         this.lastDraw = now;
         this.fpsCounter.innerText = 'FPS: ' + fps.toFixed(2);
         this.fpsCounter.style.display = 'block';
+        */
         requestAnimationFrame(nextFrameCallback);
     }
 
     animate(forceDraw?: boolean) {
+        // fps counter
+        const now = performance.now();
+        const fps = 1000 / (now - this.lastDraw);
+        this.lastDraw = now;
+        this.fpsCounter.innerText = 'FPS: ' + fps.toFixed(2);
+        this.fpsCounter.style.display = 'block';
+        
+
         if (this.destroyCallback !== null) {
             this.destroyImpl();
             return;
